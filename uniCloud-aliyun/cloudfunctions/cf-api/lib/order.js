@@ -87,12 +87,14 @@ async function orderCreate(event) {
 	// 关联下单用户：前端 http 层自动注入 token，按 token 反查 users；
 	// 查得到取 users._id 作 uid，查不到 / 未登录不拦截下单，uid 存空串（兼容老流程）
 	let uid = '';
+	let userDoc = null;
 	const userToken = typeof event.token === 'string' ? event.token.trim() : '';
 	if (userToken) {
 		try {
 			const uRes = await db.collection('users').where({ token: userToken }).limit(1).get();
 			if (uRes.data && uRes.data.length > 0) {
-				uid = uRes.data[0]._id || '';
+				userDoc = uRes.data[0];
+				uid = userDoc._id || '';
 			}
 		} catch (e) {
 			// users 集合异常（如还没建）也不能阻断下单
@@ -113,7 +115,24 @@ async function orderCreate(event) {
 		created_at: Date.now()
 	});
 
-	// 7. 返回
+	// 7. 下单即回存常用信息：姓名/取餐位置按"最近一次"覆盖，手机号本次没填就保留旧值；
+	// 回存失败不影响下单结果
+	if (userDoc && userDoc._id) {
+		try {
+			const oldProfile = userDoc.profile || {};
+			await db.collection('users').doc(userDoc._id).update({
+				profile: {
+					name: name,
+					location: location,
+					phone: phone || (typeof oldProfile.phone === 'string' ? oldProfile.phone : '')
+				}
+			});
+		} catch (e) {
+			// 档案回存失败静默，订单已成立
+		}
+	}
+
+	// 8. 返回
 	return ok({ orderNo: orderNo, total: total });
 }
 
