@@ -1,0 +1,368 @@
+	// ================= 蓝牙热敏打印（58mm ESC/POS + GBK） =================
+
+import { ref } from 'vue'
+import { ensureGbk } from './gbk-table.uts'
+
+	export type AdminItem = { name: string; pay: number; qty: number }
+	export type AdminOrder = { no: string; status: string; total: number; name: string; location: string; phone: string; note: string; items: AdminItem[]; createdAt: number }
+
+// 提示注入：admin.uvue 在定义 toast 后调用一次 initPrinter(toast)，本模块所有提示统一走 toastFn
+let toastFn: (msg: string) => void = (_) => {}
+export function initPrinter(fn: (msg: string) => void) { toastFn = fn }
+function toast(msg: string) { toastFn(msg) }
+
+	// ---------- 蓝牙打印 ----------
+	export const showPrinter = ref(false)
+	export const btState = ref('idle') // idle | scanning | connecting | ready
+	export const btDevs = ref<string[]>([])
+	export const btTicks = ref(0) // 诊断：轮询拉取次数
+	export const btEnv = ref('') // 运行通道：devtools=开发者工具模拟器（蓝牙是假的），android/ios=真机
+	export const btName = ref('')
+	export const printing = ref(false)
+	var btIds: Array<string> = []
+	var btRestarted = false // 兜底重启扫描只做一次
+	var btDeviceId = ''
+	var btServiceId = ''
+	var btCharId = ''
+	var btReady = false
+
+	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
+	export function fmt2(n: number): string { return n.toFixed(2) }
+	export function fmtTime(ms: number): string { const d = new Date(ms); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) }
+
+	// 北京时间日期串：把时刻平移到北京墙上钟后按 UTC 读（与云函数同口径）
+	export function bjDateStrOf(ms: number): string {
+		const d = new Date(ms + (480 + new Date(ms).getTimezoneOffset()) * 60000)
+		return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate())
+	}
+
+	// ESC/POS 小票组装器
+	class TicketBuilder {
+		buf: Array<number> = []
+		add(bytes: Array<number>) {
+			for (let i = 0; i < bytes.length; i++) { this.buf.push(bytes[i]) }
+		}
+		align(n: number) { this.add([0x1B, 0x61, n]) }   // 0 左 1 中 2 右
+		size(n: number) { this.add([0x1D, 0x21, n]) }   // GS ! n：高 4 位宽、低 4 位高倍率
+		text(s: string) {
+			const map = ensureGbk()
+			for (let i = 0; i < s.length; i++) {
+				const c = s.charCodeAt(i)
+				if (c < 0x80) { this.buf.push(c); continue }
+				const g = map.get(c)
+				if (g === null) { this.buf.push(0x3F) }
+				else { for (let j = 0; j < g.length; j++) { this.buf.push(g[j]) } }
+			}
+		}
+		line(s: string) { this.text(s); this.buf.push(0x0A) }
+		feed(n: number) { for (let i = 0; i < n; i++) { this.buf.push(0x0A) } }
+		// ESC d 4：打印并多走 4 行到撕纸口（本机手册无切刀命令 GS V，不能用软件切纸）
+		tear() { this.add([0x1B, 0x64, 0x04]) }
+	}
+
+	// 58mm 打印机一行 32 个半角列，中文占 2 列
+	function dispW(s: string): number {
+		let w = 0
+		for (let i = 0; i < s.length; i++) { w += s.charCodeAt(i) > 0xFF ? 2 : 1 }
+		return w
+	}
+	function padTicketLine(left: string, right: string): string {
+		let space = 32 - dispW(left) - dispW(right)
+		if (space < 1) { space = 1 }
+		let s = left
+		for (let i = 0; i < space; i++) { s += ' ' }
+		return s + right
+	}
+
+	function buildTicketBytes(o: AdminOrder): Array<number> {
+		const t = new TicketBuilder()
+		t.add([0x1B, 0x40])          // ESC @ 初始化
+		t.add([0x1B, 0x39, 0x00])    // ESC 9 0：字符编码固定 GBK（本机默认，防被其他 App 切过）
+		t.add([0x1C, 0x26])          // FS & 进入中文模式
+		t.align(1)
+		t.size(0x11)
+		t.line('富记线上饭堂')
+		t.size(0x00)
+		t.line('现炒现出 · 大堂自取')
+		t.align(0)
+		t.line('================================')
+		t.line('单号 ' + o.no)
+		t.line('时间 ' + bjDateStrOf(o.createdAt) + ' ' + fmtTime(o.createdAt))
+		t.line('--------------------------------')
+		t.line('取餐 ' + o.location)
+		t.line('客户 ' + o.name + (o.phone !== '' ? ' ' + o.phone : ''))
+		if (o.note !== '') {
+			t.size(0x01)
+			t.line('备注 ' + o.note)
+			t.size(0x00)
+		}
+		t.line('--------------------------------')
+		for (let i = 0; i < o.items.length; i++) {
+			const it = o.items[i]
+			t.line(padTicketLine(it.name + ' x' + it.qty, '￥' + fmt2(it.pay * it.qty)))
+		}
+		t.line('--------------------------------')
+		t.size(0x11)
+		t.line(padTicketLine('合计', '￥' + fmt2(o.total)))
+		t.size(0x00)
+		t.line('================================')
+		t.align(1)
+		t.line('谢谢惠顾 · 如有问题请联系店家')
+		t.feed(3)
+		t.tear()
+		return t.buf
+	}
+
+	// ---------- BLE 连接与写入 ----------
+
+	// 扫描前的授权关卡，两个都必须有：
+	// ① scope.userLocation —— 安卓 6.0+ 无定位权限时「接口成功但无法扫描设备」（官方文档）
+	// ② scope.bluetooth —— 微信给每个小程序独立的「使用蓝牙」开关（对应 openBluetoothAdapter），
+	//    开关没开时同样表现为接口成功但永远 0 台，且蓝牙 API 自己永远不会弹这个窗
+	function ensureBleAuth(done: () => void) {
+		uni.authorize({
+			scope: 'scope.userLocation',
+			success: () => {
+				console.log('BT: location auth ok')
+				uni.authorize({
+					scope: 'scope.bluetooth',
+					success: () => { console.log('BT: bluetooth auth ok'); done() },
+					fail: (err) => {
+						console.error('BT: bluetooth auth fail', err)
+						guideAuth('蓝牙', done)
+					}
+				})
+			},
+			fail: (err) => {
+				console.error('BT: location auth fail', err)
+				guideAuth('定位', done)
+			}
+		})
+	}
+
+	// 授权被拒过一次后 authorize 不再弹窗，只能引导去小程序设置面板手动打开
+	function guideAuth(what: string, done: () => void) {
+		uni.showModal({
+			title: '需要权限',
+			content: '搜索蓝牙打印机需要「定位」和「蓝牙」权限，请在设置里打开「使用' + what + '」开关',
+			confirmText: '去设置',
+			success: (r) => {
+				if (r.confirm) {
+					uni.openSetting({ success: () => { done() }, fail: () => { done() } })
+				} else { done() }
+			},
+			fail: () => { done() }
+		})
+	}
+
+	export function startScan() {
+		if (btState.value === 'scanning' || btState.value === 'connecting') { return }
+		// 运行通道自检：开发者工具模拟器的蓝牙是纯模拟的，永远搜不到真实设备，直接拦下
+		try { btEnv.value = uni.getSystemInfoSync().platform } catch (e) { btEnv.value = '' }
+		if (btEnv.value === 'devtools') {
+			uni.showModal({
+				title: '当前在开发者工具模拟器里',
+				content: '模拟器的蓝牙是模拟的，搜不到真实打印机。请点工具栏的「预览」按钮，用手机扫码后在手机上测试。',
+				showCancel: false,
+				success: () => {}
+			})
+			return
+		}
+		// 定位/蓝牙任一授权缺失时，安卓上扫描都会「成功但 0 台」，先过授权关
+		ensureBleAuth(() => {
+			btDevs.value = []
+			btTicks.value = 0
+			btIds.splice(0, btIds.length)
+			btRestarted = false
+			uni.openBluetoothAdapter({
+				success: () => {
+					console.log('BT: adapter ok')
+					uni.startBluetoothDevicesDiscovery({
+						success: () => {
+							console.log('BT: discovery ok')
+							btState.value = 'scanning'
+							// 小程序端轮询 getBluetoothDevices 是唯一的设备发现通道（事件监听不可用）
+							pollBtDevices()
+						},
+						fail: (err) => { console.error('BT: discovery fail', err); btState.value = 'idle'; toast('搜索失败，请重试') }
+					})
+				},
+				fail: (err) => { console.error('BT: adapter fail', err); toast('蓝牙不可用，请检查手机蓝牙是否开启') }
+			})
+		})
+	}
+
+	// 每 4 秒主动拉一次已发现设备（小程序端这是唯一的设备发现通道，事件监听不可用）
+	function pollBtDevices() {
+		if (btState.value !== 'scanning') { return }
+		uni.getBluetoothDevices({
+			success: (res) => {
+				if (btState.value !== 'scanning') { return }
+				btTicks.value++
+				const ds = res.devices
+				console.log('BT: poll#' + btTicks.value + ' raw=' + ds.length)
+				// 兜底：扫了 4 轮仍 0 台，把整个蓝牙适配器关掉重开再扫（比只重启扫描更彻底，
+				// 能清掉微信进程里可能卡死的扫描会话）
+				if (btTicks.value === 4 && ds.length === 0 && !btRestarted) {
+					btRestarted = true
+					console.log('BT: cold restart adapter')
+					uni.closeBluetoothAdapter({
+						success: () => { console.log('BT: adapter closed') },
+						fail: () => {},
+						complete: () => {
+							uni.openBluetoothAdapter({
+								success: () => {
+									console.log('BT: adapter reopened')
+									uni.startBluetoothDevicesDiscovery({
+										success: () => { console.log('BT: discovery restarted') },
+										fail: (err) => { console.error('BT: restart fail', err) }
+									})
+								},
+								fail: (err) => { console.error('BT: reopen fail', err) }
+							})
+						}
+					})
+				}
+				for (let i = 0; i < ds.length; i++) {
+					const d = ds[i]
+					if (i === 0) { console.log('BT: sample name=', d.name, 'localName=', d.localName, 'id=', d.deviceId) }
+					let nm = d.name !== '' ? d.name : d.localName
+					if (nm === '') { nm = '未命名设备(' + d.deviceId.substring(d.deviceId.length - 5) + ')' }
+					if (btIds.indexOf(d.deviceId) >= 0) { continue }
+					btIds.push(d.deviceId)
+					btDevs.value.push(nm)
+				}
+				setTimeout(() => { pollBtDevices() }, 4000)
+			},
+			fail: (err) => { console.error('BT: poll fail', err); setTimeout(() => { pollBtDevices() }, 4000) }
+		})
+	}
+
+	export function btStateText(): string {
+		if (btState.value === 'ready') { return '已连接 ' + btName.value }
+		if (btState.value === 'scanning') { return '搜索设备中…' }
+		if (btState.value === 'connecting') { return '连接中…' }
+		if (btName.value !== '') { return '已存「' + btName.value + '」，未连接（打印时自动重连）' }
+		return '未连接'
+	}
+
+	export async function pickDevice(index: number) {
+		if (btState.value === 'connecting') return
+		if (index < 0 || index >= btIds.length) return
+		const id = btIds[index]
+		const nm = index < btDevs.value.length ? btDevs.value[index] : '打印机'
+		if (btState.value === 'scanning') {
+			uni.stopBluetoothDevicesDiscovery({ success: () => {}, fail: () => {} })
+		}
+		btDeviceId = id
+		btName.value = nm
+		uni.setStorageSync('xk_bt_id', id)
+		uni.setStorageSync('xk_bt_name', nm)
+		btReady = false
+		const ok = await ensureBtReady()
+		if (ok) { toast('已连接 ' + nm) }
+	}
+
+	async function ensureBtReady(): Promise<boolean> {
+		if (btReady) { return true }
+		let id = btDeviceId
+		if (id === '') {
+			const s1 = uni.getStorageSync('xk_bt_id')
+			if (s1 instanceof String || typeof s1 === 'string') { id = s1 as string }
+			if (id === '') { showPrinter.value = true; toast('请先连接打印机'); return false }
+			btDeviceId = id
+		}
+		if (btName.value === '') {
+			const s2 = uni.getStorageSync('xk_bt_name')
+			if (s2 instanceof String || typeof s2 === 'string') { btName.value = s2 as string }
+		}
+		// 旧连接可能已失效：先关再连
+		await new Promise<boolean>((resolve) => {
+			uni.closeBLEConnection({ deviceId: id, success: () => { resolve(true) }, fail: () => { resolve(true) } })
+		})
+		const connected = await new Promise<boolean>((resolve) => {
+			btState.value = 'connecting'
+			uni.createBLEConnection({ deviceId: id, timeout: 6000, success: () => { resolve(true) }, fail: () => { resolve(false) } })
+		})
+		if (!connected) { btState.value = 'idle'; toast('连接打印机失败，请在打印机面板重连'); return false }
+		const found = await findWriteCharAsync(id)
+		if (!found) { btState.value = 'idle'; toast('没找到打印通道，可能不支持该打印机'); return false }
+		btReady = true
+		btState.value = 'ready'
+		return true
+	}
+
+	function findWriteCharAsync(deviceId: string): Promise<boolean> {
+		return new Promise<boolean>((resolve) => {
+			uni.getBLEDeviceServices({
+				deviceId: deviceId,
+				success: (sres) => {
+					const services = sres.services
+					let sIdx = 0
+					const tryNext: () => void = () => {
+						if (sIdx >= services.length) { resolve(false); return }
+						const sid = services[sIdx].uuid
+						sIdx++
+						// 跳过标准 GATT 服务，直奔厂商服务
+						if (sid.indexOf('00001800') === 0 || sid.indexOf('00001801') === 0 || sid.indexOf('0000180a') === 0 || sid.indexOf('0000180f') === 0) { tryNext(); return }
+						uni.getBLEDeviceCharacteristics({
+							deviceId: deviceId, serviceId: sid,
+							success: (cres) => {
+								const chars = cres.characteristics
+								// 优先选「写+响应」通道：success 回调=打印机确认收到，数据不丢；
+								// writeNoResponse 只作后备（发太快打印机缓冲会溢出丢字节）
+								let picked = -1
+								for (let i = 0; i < chars.length; i++) {
+									if (chars[i].properties.write === true) { picked = i; break }
+								}
+								if (picked === -1) {
+									for (let i = 0; i < chars.length; i++) {
+										if (chars[i].properties.writeNoResponse === true) { picked = i; break }
+									}
+								}
+								if (picked >= 0) {
+									btServiceId = sid
+									btCharId = chars[picked].uuid
+									resolve(true)
+									return
+								}
+								tryNext()
+							},
+							fail: () => { tryNext() }
+						})
+					}
+					tryNext()
+				},
+				fail: () => { resolve(false) }
+			})
+		})
+	}
+
+	// 分包写入：BLE 默认 MTU 一次只能 20 字节；逐包等成功、包间留 15ms 间隙，
+	// 防止打印机 BLE 缓冲溢出丢字节（中文是 2 字节一字，丢 1 个字节后面整段变 ?）
+	function btWrite(bytes: Array<number>, idx: number, done: () => void, onErr: (msg: string) => void) {
+		if (idx >= bytes.length) { done(); return }
+		const end = idx + 20 < bytes.length ? idx + 20 : bytes.length
+		const n = end - idx
+		const ab = new ArrayBuffer(n)
+		const u8 = new Uint8Array(ab)
+		for (let i = 0; i < n; i++) { u8[i] = bytes[idx + i] }
+		uni.writeBLECharacteristicValue({
+			deviceId: btDeviceId, serviceId: btServiceId, characteristicId: btCharId,
+			value: ab,
+			success: () => { setTimeout(() => { btWrite(bytes, end, done, onErr) }, 15) },
+			fail: (err) => { onErr(err.errMsg) }
+		})
+	}
+
+	export async function printOrder(o: AdminOrder) {
+		if (printing.value) return
+		printing.value = true
+		const ok = await ensureBtReady()
+		if (!ok) { printing.value = false; return }
+		const bytes = buildTicketBytes(o)
+		btWrite(bytes, 0,
+			() => { printing.value = false; toast('小票已发送打印') },
+			(msg: string) => { printing.value = false; btReady = false; btState.value = 'idle'; toast('打印失败：' + msg) }
+		)
+	}

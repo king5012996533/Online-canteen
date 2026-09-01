@@ -1,0 +1,729 @@
+<template>
+	<view class="page">
+		<!-- 口令门 -->
+		<view v-if="showGate" class="gate">
+			<view class="gate-card">
+				<view class="seal"><text class="seal-char">富</text></view>
+				<text class="gate-title">富记厨房端</text>
+				<text class="gate-sub">内部管理入口 · 请输入访问口令</text>
+				<input class="gate-input" type="password" v-model="passInput" placeholder="访问口令" placeholder-class="ph" />
+				<text v-if="gateErr !== ''" class="gate-err">{{gateErr}}</text>
+				<button class="primary" @click="submitGate">{{checking ? '验证中…' : '进入'}}</button>
+			</view>
+		</view>
+
+		<!-- 主面板 -->
+		<scroll-view v-else class="scroll" scroll-y="true">
+			<view class="content">
+				<view class="header">
+					<view><text class="page-title">厨房端</text><text class="header-sub">富记线上饭堂 · 每 30 秒自动刷新</text></view>
+					<view class="header-btns">
+						<button class="refresh" @click="togglePrinterPanel">{{btState === 'ready' ? '打印机✓' : '打印机'}}</button>
+						<button class="refresh" @click="loadSummary">{{loading ? '…' : '刷新'}}</button>
+					</view>
+				</view>
+
+				<!-- 蓝牙打印面板 -->
+				<view v-if="showPrinter" class="bt-panel">
+					<view class="bt-head">
+						<text class="bt-title">蓝牙打印机</text>
+						<view class="bt-close" @click="togglePrinterPanel"><text class="bt-close-text">收起</text></view>
+					</view>
+					<text class="bt-status">状态：{{btStateText()}}</text>
+					<button class="bt-scan" @click="startScan">{{btState === 'scanning' ? '搜索中… 点下面设备连接' : '搜索打印机'}}</button>
+					<text v-if="btState === 'scanning'" class="bt-status">已发现 {{btDevs.length}} 台 · 已拉取 {{btTicks}} 次 · {{btEnv === 'devtools' ? 'devtools(模拟器)' : btEnv}}</text>
+					<view v-for="(nm, index) in btDevs" :key="index" class="bt-dev" @click="pickDevice(index)">
+						<text class="bt-dev-name">{{nm}}</text>
+						<text class="bt-dev-conn">连接</text>
+					</view>
+					<text class="bt-tip">打印机先开机；搜不到就长按打印机走纸键进入配对模式再搜。连一次即可，以后打印自动重连。</text>
+				</view>
+
+				<!-- Tab 切换 -->
+				<view class="tabs">
+					<view class="tab" :class="{'tab-on': tab === 'orders'}" @click="switchTab('orders')"><text class="tab-text" :class="{'tab-text-on': tab === 'orders'}">今日订单</text></view>
+					<view class="tab" :class="{'tab-on': tab === 'menu'}" @click="switchTab('menu')"><text class="tab-text" :class="{'tab-text-on': tab === 'menu'}">菜单发布</text></view>
+				</view>
+
+				<!-- 断连提示（后台轮询失败时显示，恢复后自动消失） -->
+				<view v-if="netLost" class="net-lost"><text class="net-lost-text">网络不稳，正在自动重连…</text></view>
+
+				<!-- ===== 订单 Tab ===== -->
+				<view v-if="tab === 'orders'">
+					<view class="sum-card">
+						<view class="sum-head">
+							<text class="sum-date">{{sumDate}}</text>
+							<text class="sum-badge" :class="cutoffPassed ? 'badge-cut' : 'badge-live'">{{cutoffPassed ? '已截单' : '接单中'}}</text>
+						</view>
+						<view class="lines">
+							<view v-if="dishLines.length === 0" class="line"><text class="muted">今日还没有有效订单</text></view>
+							<view v-for="(line, index) in dishLines" :key="index" class="line">
+								<text class="line-name">{{line.name}}</text>
+								<text class="line-qty">× {{line.qty}}</text>
+								<text class="line-amount">¥{{fmt2(line.amount)}}</text>
+							</view>
+						</view>
+						<view class="sum-foot">
+							<text class="sum-meta">共 {{orderCount}} 单 · 含加价 ¥{{fmt2(customExtra)}}</text>
+							<text class="sum-total">GMV ¥{{fmt2(totalGmv)}}</text>
+						</view>
+					</view>
+
+					<text class="sec-title">订单 · {{orders.length}}</text>
+
+					<view v-for="order in orders" :key="order.no" class="order-card" :class="{'order-cancel': order.status === 'canceled'}">
+						<view class="oc-head">
+							<text class="oc-no">{{order.no}}</text>
+							<text class="oc-status" :class="statusClass(order.status)">{{statusText(order.status)}}</text>
+						</view>
+						<view class="oc-cust">
+							<text class="oc-name">{{order.name}} · {{order.location}}</text>
+							<text v-if="order.phone !== ''" class="oc-phone">{{order.phone}}</text>
+						</view>
+						<text v-if="order.note !== ''" class="oc-note">备注：{{order.note}}</text>
+						<view class="oc-items">
+							<view v-for="(item, index) in order.items" :key="index" class="oc-item">
+								<text class="oc-item-name">{{item.name}} × {{item.qty}}</text>
+								<text class="oc-item-price">¥{{fmt2(item.pay * item.qty)}}</text>
+							</view>
+						</view>
+						<view class="oc-foot">
+							<text class="oc-time">{{fmtTime(order.createdAt)}} 下单</text>
+							<text class="oc-total">合计 ¥{{fmt2(order.total)}}</text>
+						</view>
+						<view v-if="order.status === 'pending' || order.status === 'cooking'" class="oc-actions">
+							<button class="act act-main" :disabled="busyNo !== ''" @click="setStatus(order.no, order.status === 'pending' ? 'cooking' : 'ready')">{{order.status === 'pending' ? '开始制作' : '出餐完成'}}</button>
+							<button class="act act-print" @click="printOrder(order)">打印</button>
+							<button class="act act-cancel" @click="cancelOrder(order.no)">取消</button>
+						</view>
+						<view v-else-if="order.status === 'ready'" class="oc-actions">
+							<view class="done-tip"><text class="done-tip-text">✓ 已出餐，等客取走</text></view>
+							<button class="act act-print" @click="printOrder(order)">打印</button>
+							<button class="act act-cancel" @click="cancelOrder(order.no)">取消</button>
+						</view>
+						<view v-else class="oc-actions">
+							<button class="act act-print" @click="printOrder(order)">打印</button>
+						</view>
+					</view>
+					<view v-if="orders.length === 0" class="order-card"><text class="muted">今日还没有订单</text></view>
+				</view>
+
+				<!-- ===== 菜单 Tab ===== -->
+				<view v-else>
+					<view class="menu-head">
+						<view class="pill-row">
+							<view class="pill" :class="{'pill-on': menuDateMode === 'today'}" @click="switchMenuDay('today')"><text class="pill-text" :class="{'pill-text-on': menuDateMode === 'today'}">今天</text></view>
+							<view class="pill" :class="{'pill-on': menuDateMode === 'tomorrow'}" @click="switchMenuDay('tomorrow')"><text class="pill-text" :class="{'pill-text-on': menuDateMode === 'tomorrow'}">明天</text></view>
+							<view class="pill" @click="useTemplate"><text class="pill-text">按模板重生成</text></view>
+						</view>
+						<text class="menu-date-hint">{{menuDate}} · 改完点「发布菜单」才生效</text>
+					</view>
+
+					<view v-for="(dish, index) in menuDishes" :key="dish.id" class="dish-card" :class="{'dish-off': dish.soldOut}">
+						<view class="dc-row1">
+							<text class="dc-name">{{dish.name === '' ? '（未命名）' : dish.name}}</text>
+							<text class="dc-price">￥{{fmt2(dish.basePrice)}}</text>
+						</view>
+						<view class="dc-row2">
+							<text class="dc-cat">{{dish.category}}</text>
+							<text v-if="dish.canCustomPrice" class="dc-badge dc-badge-custom">可加价</text>
+							<text v-if="dish.soldOut" class="dc-badge dc-badge-off">已售罄</text>
+						</view>
+						<view class="dc-ops">
+							<view class="dc-op" @click="toggleSoldOut(dish)"><text class="dc-op-text">{{dish.soldOut ? '恢复售卖' : '售罄'}}</text></view>
+							<view class="dc-op" @click="openEdit(index)"><text class="dc-op-text">编辑</text></view>
+							<view class="dc-op" @click="removeDish(index)"><text class="dc-op-text dc-op-del">删除</text></view>
+						</view>
+					</view>
+					<view v-if="menuDishes.length === 0" class="order-card"><text class="muted">菜单是空的：点「＋ 添加菜品」手写，或点上方「按模板重生成」</text></view>
+
+					<view class="add-dish" @click="addDish"><text class="add-dish-text">＋ 添加菜品</text></view>
+
+					<view v-if="editIdx >= 0" class="edit-card">
+						<text class="edit-title">编辑菜品</text>
+						<view class="edit-row"><text class="edit-label">菜名</text><input class="edit-input" v-model="editName" placeholder="如：茄子肉末" placeholder-class="ph" /></view>
+						<view class="edit-row"><text class="edit-label">价格</text><input class="edit-input" type="digit" v-model="editPrice" placeholder="如：6" placeholder-class="ph" /></view>
+						<view class="edit-row"><text class="edit-label">分类</text><input class="edit-input" v-model="editCategory" placeholder="素菜 / 荤素搭配 / 纯荤" placeholder-class="ph" /></view>
+						<view class="edit-row"><text class="edit-label">描述</text><input class="edit-input" v-model="editDesc" placeholder="如：微辣 · 可加价" placeholder-class="ph" /></view>
+						<view class="edit-row">
+							<text class="edit-label">配图</text>
+							<image v-if="editImg !== ''" class="edit-img" :src="editImg" mode="aspectFill"></image>
+							<view v-else class="edit-img edit-img-empty"><text class="edit-img-empty-t">暂无图</text></view>
+							<button class="act act-gen" :disabled="genImgLoading" @click="genImage">{{genImgLoading ? '生成中，约 1~3 分钟…' : 'AI 生成配图'}}</button>
+						</view>
+						<view class="edit-chips">
+							<view class="chip-t" :class="{'chip-t-on': editCustom}" @click="toggleEditCustom"><text class="chip-t-text" :class="{'chip-t-text-on': editCustom}">可加价</text></view>
+						</view>
+						<view class="edit-btns">
+							<button class="act act-main" @click="saveEdit">保存该菜</button>
+							<button class="act act-cancel" @click="closeEdit">取消</button>
+						</view>
+					</view>
+
+					<view class="pub-row">
+						<view class="chip-t" :class="{'chip-t-on': menuSyncTpl}" @click="toggleSyncTpl"><text class="chip-t-text" :class="{'chip-t-text-on': menuSyncTpl}">同步为模板</text></view>
+						<text class="pub-hint">模板 = 以后每天自动生成的默认菜单</text>
+					</view>
+					<button class="primary" :disabled="publishing" @click="publishMenu">{{publishing ? '发布中…' : '发布菜单'}}</button>
+				</view>
+
+				<view class="footer-space"></view>
+			</view>
+		</scroll-view>
+		<view v-if="toastMessage !== ''" class="toast">{{toastMessage}}</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { requestJson, requestJsonTimeout } from '../../common/http.uts'
+import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, pickDevice, printOrder, initPrinter, AdminOrder, AdminItem, fmt2, fmtTime, bjDateStrOf } from './bt-printer.uts'
+
+	// 厨房管理端（小程序版）：走 cf-api 云函数（mod=admin）HTTP 直连，与点单页同源同模式。
+	// 功能：今日订单（汇总 + 状态流转）· 菜单发布（编辑某日菜单，可同步模板）· 蓝牙热敏小票打印（58mm ESC/POS + GBK）
+	type DishLine = { name: string; qty: number; amount: number }
+	type MenuDish = { id: string; category: string; name: string; desc: string; basePrice: number; canCustomPrice: boolean; image: string; soldOut: boolean }
+
+
+	const showGate = ref(false)
+	const passInput = ref('')
+	const gateErr = ref('')
+	const checking = ref(false)
+	var pass = ''
+
+	const loading = ref(false)
+	const sumDate = ref('')
+	const cutoffPassed = ref(false)
+	const dishLines = ref<DishLine[]>([])
+	const totalGmv = ref(0)
+	const customExtra = ref(0)
+	const orderCount = ref(0)
+	const orders = ref<AdminOrder[]>([])
+	const toastMessage = ref('')
+	const busyNo = ref('')
+	const netLost = ref(false) // 后台轮询断连标记：失败亮横条不弹窗，恢复后自动消失
+
+	// ---------- 菜单发布 ----------
+	const tab = ref('orders')
+	const menuDateMode = ref('today') // today | tomorrow
+	const menuDate = ref('')
+	const menuDishes = ref<MenuDish[]>([])
+	const tplDishes = ref<MenuDish[]>([])
+	const menuLoading = ref(false)
+	const publishing = ref(false)
+	const menuSyncTpl = ref(true)
+	const editIdx = ref(-1)
+	const editName = ref('')
+	const editPrice = ref('')
+	const editCategory = ref('')
+	const editDesc = ref('')
+	const editCustom = ref(false)
+	const editImg = ref('')
+	const genImgLoading = ref(false)
+	var menuLoadedOnce = false
+
+
+	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
+initPrinter(toast)
+	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '可取餐'; if (s === 'canceled') return '已取消'; return '待处理' }
+	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-ready'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+
+	function menuDateStr(): string {
+		return menuDateMode.value === 'tomorrow' ? bjDateStrOf(Date.now() + 86400000) : bjDateStrOf(Date.now())
+	}
+
+
+	function applySummary(result: UTSJSONObject) {
+		const data = result.getJSON('data')
+		if (!(data instanceof UTSJSONObject)) { toast('数据格式异常'); return }
+		sumDate.value = data.getString('date') ?? ''
+		cutoffPassed.value = data.getBoolean('cutoffPassed') === true
+		totalGmv.value = data.getNumber('totalGmv') ?? 0
+		customExtra.value = data.getNumber('customExtra') ?? 0
+		orderCount.value = Math.floor(data.getNumber('orderCount') ?? 0)
+		const lines: DishLine[] = []
+		const arr = data.getArray('dishLines')
+		if (arr !== null) {
+			for (let i = 0; i < arr.length; i++) {
+				const o = arr[i]
+				if (o instanceof UTSJSONObject) {
+					lines.push({ name: o.getString('name') ?? '', qty: Math.floor(o.getNumber('qty') ?? 0), amount: o.getNumber('amount') ?? 0 })
+				}
+			}
+		}
+		dishLines.value = lines
+		const list: AdminOrder[] = []
+		const arr2 = data.getArray('orders')
+		if (arr2 !== null) {
+			for (let i = 0; i < arr2.length; i++) {
+				const o = arr2[i]
+				if (o instanceof UTSJSONObject) {
+					const cust = o.getJSON('customer')
+					let name = ''; let location = ''; let phone = ''; let note = ''
+					if (cust instanceof UTSJSONObject) {
+						name = cust.getString('name') ?? ''
+						location = cust.getString('location') ?? ''
+						phone = cust.getString('phone') ?? ''
+						note = cust.getString('note') ?? ''
+					}
+					const items: AdminItem[] = []
+					const itemsArr = o.getArray('items')
+					if (itemsArr !== null) {
+						for (let j = 0; j < itemsArr.length; j++) {
+							const it = itemsArr[j]
+							if (it instanceof UTSJSONObject) {
+								items.push({ name: it.getString('name') ?? '', pay: it.getNumber('pay') ?? 0, qty: Math.floor(it.getNumber('qty') ?? 0) })
+							}
+						}
+					}
+					list.push({ no: o.getString('orderNo') ?? '', status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, note: note, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
+				}
+			}
+		}
+		orders.value = list
+	}
+
+	async function loadSummary() {
+		if (pass === '') { showGate.value = true; return }
+		loading.value = true
+		const result = await requestJson('/cf-admin', { password: pass, action: 'summary', date: '' } as UTSJSONObject)
+		loading.value = false
+		if (result !== null && result.getBoolean('ok') === true) {
+			applySummary(result)
+		} else {
+			const err = result !== null ? (result.getString('err') ?? '') : ''
+			if (err.indexOf('口令') >= 0) { pass = ''; uni.removeStorageSync('xk_admin_pass'); showGate.value = true; gateErr.value = '口令已失效，请重新输入' }
+			else { toast(result !== null ? (err === '' ? '加载失败，请重试' : err) : '网络异常，请重试') }
+		}
+	}
+
+	// 静默轮询（后台自动刷新专用）：失败不弹 toast、不闪 loading，只亮断连横条；
+	// 口令失效除外——那种情况要把输入门弹回来
+	async function pollSummary() {
+		if (showGate.value || pass === '') return
+		const result = await requestJson('/cf-admin', { password: pass, action: 'summary', date: '' } as UTSJSONObject)
+		if (result !== null && result.getBoolean('ok') === true) {
+			netLost.value = false
+			applySummary(result)
+			return
+		}
+		const err = result !== null ? (result.getString('err') ?? '') : ''
+		if (err.indexOf('口令') >= 0) {
+			netLost.value = false
+			pass = ''
+			uni.removeStorageSync('xk_admin_pass')
+			showGate.value = true
+			gateErr.value = '口令已失效，请重新输入'
+		} else {
+			netLost.value = true
+		}
+	}
+
+	async function submitGate() {
+		if (checking.value) return
+		const p = passInput.value.trim()
+		if (p === '') { gateErr.value = '请输入口令'; return }
+		checking.value = true
+		const result = await requestJson('/cf-admin', { password: p, action: 'summary', date: '' } as UTSJSONObject)
+		checking.value = false
+		if (result !== null && result.getBoolean('ok') === true) {
+			pass = p
+			uni.setStorageSync('xk_admin_pass', p)
+			showGate.value = false
+			gateErr.value = ''
+			applySummary(result)
+		} else {
+			gateErr.value = result !== null ? (result.getString('err') ?? '口令错误') : '网络异常，请重试'
+		}
+	}
+
+	async function setStatus(no: string, status: string) {
+		if (busyNo.value !== '') return
+		busyNo.value = no
+		const result = await requestJson('/cf-admin', { password: pass, action: 'updateStatus', orderNo: no, status: status } as UTSJSONObject)
+		busyNo.value = ''
+		if (result !== null && result.getBoolean('ok') === true) {
+			toast(status === 'canceled' ? '已取消' : '状态已更新')
+			loadSummary()
+		} else {
+			toast(result !== null ? (result.getString('err') ?? '操作失败') : '网络异常，请重试')
+		}
+	}
+
+	function cancelOrder(no: string) {
+		uni.showModal({
+			title: '取消订单',
+			content: '确定取消 ' + no + ' 吗？取消后不计入今日汇总。',
+			success: (res) => { if (res.confirm === true) { setStatus(no, 'canceled') } }
+		})
+	}
+
+	// ================= 菜单发布 =================
+
+	function switchTab(t: string) {
+		tab.value = t
+		if (t === 'menu' && !menuLoadedOnce) { menuLoadedOnce = true; loadMenu() }
+	}
+
+	function switchMenuDay(mode: string) {
+		if (menuDateMode.value === mode) return
+		menuDateMode.value = mode
+		if (menuLoadedOnce) { loadMenu() }
+	}
+
+	async function loadMenu() {
+		if (pass === '') { showGate.value = true; return }
+		if (menuLoading.value) return
+		menuLoading.value = true
+		const result = await requestJson('/cf-admin', { password: pass, action: 'getMenu', date: menuDateStr() } as UTSJSONObject)
+		menuLoading.value = false
+		if (result !== null && result.getBoolean('ok') === true) {
+			applyMenu(result)
+		} else {
+			toast(result !== null ? (result.getString('err') ?? '菜单加载失败') : '网络异常，请重试')
+		}
+	}
+
+	function applyMenu(result: UTSJSONObject) {
+		const data = result.getJSON('data')
+		if (!(data instanceof UTSJSONObject)) { toast('数据格式异常'); return }
+		menuDate.value = data.getString('date') ?? ''
+		const list: MenuDish[] = []
+		const arr = data.getArray('dishes')
+		if (arr !== null) {
+			for (let i = 0; i < arr.length; i++) {
+				const o = arr[i]
+				if (o instanceof UTSJSONObject) {
+					list.push({
+						id: o.getString('id') ?? '',
+						category: o.getString('category') ?? '荤素搭配',
+						name: o.getString('name') ?? '',
+						desc: o.getString('desc') ?? '',
+						basePrice: o.getNumber('basePrice') ?? 0,
+						canCustomPrice: o.getBoolean('canCustomPrice') === true,
+						image: o.getString('image') ?? '',
+						soldOut: o.getBoolean('soldOut') === true
+					})
+				}
+			}
+		}
+		const tlist: MenuDish[] = []
+		const tarr = data.getArray('templates')
+		if (tarr !== null) {
+			for (let i = 0; i < tarr.length; i++) {
+				const o = tarr[i]
+				if (o instanceof UTSJSONObject) {
+					tlist.push({
+						id: o.getString('id') ?? '',
+						category: o.getString('category') ?? '荤素搭配',
+						name: o.getString('name') ?? '',
+						desc: o.getString('desc') ?? '',
+						basePrice: o.getNumber('basePrice') ?? 0,
+						canCustomPrice: o.getBoolean('canCustomPrice') === true,
+						image: o.getString('image') ?? '',
+						soldOut: o.getBoolean('soldOut') === true
+					})
+				}
+			}
+		}
+		tplDishes.value = tlist
+		menuDishes.value = list
+		editIdx.value = -1
+		if (list.length === 0 && tlist.length > 0) {
+			fillFromTemplate()
+			toast('该日菜单还没发布，已按模板生成草稿')
+		}
+	}
+
+	function fillFromTemplate() {
+		const list: MenuDish[] = []
+		for (let i = 0; i < tplDishes.value.length; i++) {
+			const t = tplDishes.value[i]
+			list.push({ id: t.id, category: t.category, name: t.name, desc: t.desc, basePrice: t.basePrice, canCustomPrice: t.canCustomPrice, image: t.image, soldOut: t.soldOut })
+		}
+		menuDishes.value = list
+		editIdx.value = -1
+	}
+
+	function useTemplate() {
+		if (tplDishes.value.length === 0) { toast('还没有模板：先去点单端打开一次小程序即可生成'); return }
+		if (menuDishes.value.length > 0) {
+			uni.showModal({
+				title: '按模板重新生成',
+				content: '会覆盖当前未发布的草稿，确定吗？',
+				success: (res) => { if (res.confirm === true) { fillFromTemplate() } }
+			})
+		} else {
+			fillFromTemplate()
+		}
+	}
+
+	function openEdit(index: number) {
+		if (index < 0 || index >= menuDishes.value.length) return
+		const d = menuDishes.value[index]
+		editIdx.value = index
+		editName.value = d.name
+		editPrice.value = fmt2(d.basePrice)
+		editCategory.value = d.category
+		editDesc.value = d.desc
+		editCustom.value = d.canCustomPrice
+		editImg.value = d.image
+	}
+
+	function addDish() {
+		const d: MenuDish = {
+			id: 'n' + Math.floor(Math.random() * 100000000),
+			category: '荤素搭配', name: '', desc: '',
+			basePrice: 6, canCustomPrice: true,
+			image: '/static/dishes/mix1.png', soldOut: false
+		}
+		menuDishes.value.push(d)
+		openEdit(menuDishes.value.length - 1)
+	}
+
+	function removeDish(index: number) {
+		if (index < 0 || index >= menuDishes.value.length) return
+		const d = menuDishes.value[index]
+		uni.showModal({
+			title: '删除菜品',
+			content: '从草稿里删除「' + (d.name === '' ? '未命名' : d.name) + '」？点「发布菜单」后才真正生效。',
+			success: (res) => {
+				if (res.confirm === true) {
+					menuDishes.value.splice(index, 1)
+					if (editIdx.value === index) { editIdx.value = -1 }
+				}
+			}
+		})
+	}
+
+	function toggleSoldOut(d: MenuDish) { d.soldOut = !d.soldOut }
+	function toggleEditCustom() { editCustom.value = !editCustom.value }
+
+	// AI 生成菜品配图：调 cf-api 的 genDishImage（生图 30~60 秒，走长超时）
+	async function genImage() {
+		if (genImgLoading.value) return
+		if (editIdx.value < 0) return
+		if (editName.value.trim() === '') { toast('先填菜名，再生成配图'); return }
+		genImgLoading.value = true
+		const result = await requestJsonTimeout('/cf-admin', { password: pass, action: 'genDishImage', name: editName.value.trim(), category: editCategory.value, desc: editDesc.value } as UTSJSONObject, 330000)
+		genImgLoading.value = false
+		if (editIdx.value < 0) return
+		if (result !== null && result.getBoolean('ok') === true) {
+			const data = result.getJSON('data')
+			if (data instanceof UTSJSONObject) {
+				editImg.value = data.getString('url') ?? ''
+				toast('配图已生成 ✓ 记得保存该菜')
+			} else { toast('生成失败，请重试') }
+		} else {
+			toast(result !== null ? (result.getString('err') ?? '生成失败，请重试') : '网络超时，请重试')
+		}
+	}
+	function toggleSyncTpl() { menuSyncTpl.value = !menuSyncTpl.value }
+	function togglePrinterPanel() { showPrinter.value = !showPrinter.value }
+	function closeEdit() { editIdx.value = -1 }
+
+	function saveEdit() {
+		const idx = editIdx.value
+		if (idx < 0 || idx >= menuDishes.value.length) { editIdx.value = -1; return }
+		const name = editName.value.trim()
+		if (name === '') { toast('菜名不能为空'); return }
+		const p = parseFloat(editPrice.value)
+		if (!(p >= 0) || p > 9999) { toast('价格不合法'); return }
+		const d = menuDishes.value[idx]
+		d.name = name
+		d.basePrice = Math.round(p * 100) / 100
+		d.category = editCategory.value.trim() === '' ? '荤素搭配' : editCategory.value.trim()
+		d.desc = editDesc.value.trim()
+		d.canCustomPrice = editCustom.value
+		d.image = editImg.value.trim() === '' ? '/static/dishes/mix1.png' : editImg.value.trim()
+		editIdx.value = -1
+		toast('已保存修改，记得点「发布菜单」')
+	}
+
+	function publishMenu() {
+		if (publishing.value) return
+		if (menuDishes.value.length === 0) { toast('菜单是空的'); return }
+		for (let i = 0; i < menuDishes.value.length; i++) {
+			const d = menuDishes.value[i]
+			if (d.name.trim() === '') { toast('第 ' + (i + 1) + ' 个菜品还没填菜名'); return }
+			if (!(d.basePrice >= 0)) { toast('菜品「' + d.name + '」价格不对'); return }
+		}
+		uni.showModal({
+			title: '发布菜单',
+			content: '发布 ' + menuDate.value + ' 的菜单（' + menuDishes.value.length + ' 道菜）？发布后点单页立即生效。',
+			success: (res) => { if (res.confirm === true) { doPublish() } }
+		})
+	}
+
+	async function doPublish() {
+		publishing.value = true
+		const arr: Array<UTSJSONObject> = []
+		for (let i = 0; i < menuDishes.value.length; i++) {
+			const d = menuDishes.value[i]
+			arr.push({
+				id: d.id, category: d.category, name: d.name.trim(), desc: d.desc,
+				basePrice: d.basePrice, canCustomPrice: d.canCustomPrice,
+				image: d.image, soldOut: d.soldOut
+			} as UTSJSONObject)
+		}
+		const result = await requestJson('/cf-admin', { password: pass, action: 'saveMenu', date: menuDate.value, dishes: arr, syncTemplate: menuSyncTpl.value } as UTSJSONObject)
+		publishing.value = false
+		if (result !== null && result.getBoolean('ok') === true) {
+			toast('菜单已发布 ✓')
+			loadMenu()
+		} else {
+			toast(result !== null ? (result.getString('err') ?? '发布失败，请重试') : '网络异常，请重试')
+		}
+	}
+
+	// 启动：本机存过口令直接进面板，否则开口令门
+	const saved = uni.getStorageSync('xk_admin_pass')
+	if (saved instanceof String || typeof saved === 'string') { pass = saved as string }
+	if (pass === '') { showGate.value = true } else { loadSummary() }
+
+	// 注意：小程序端 uni-app x 运行时（vendor.js 的 initUni/promisify）会把 uni.onXxx(裸回调)
+	// 转成 Promise 调用，我们的回调根本不会注册进 wx——实测设备事件永远收不到。
+	// 因此设备发现完全依赖 pollBtDevices 的 getBluetoothDevices 轮询（对象式回调，已验证可用）；
+	// 断连由 writeBLECharacteristicValue 的 fail 分支重置 btReady，不再注册 onBLEConnectionStateChange。
+
+	// 后台自动刷新：正常 30 秒一轮；断连时 12 秒快速重试，恢复后自动回到 30 秒。
+	// 轮询全部走 pollSummary（静默），手动刷新按钮仍走 loadSummary（保留 toast）
+	var autoTimer = -1
+	function schedulePoll() {
+		autoTimer = setTimeout(() => { pollSummary(); schedulePoll() }, netLost.value ? 12000 : 30000)
+	}
+	schedulePoll()
+	onUnmounted(() => { if (autoTimer !== -1) { clearTimeout(autoTimer) } })
+</script>
+
+<style>
+	.page { flex: 1; background-color: #F2F3EF; color: #1C1917; }
+	.net-lost { margin: 12rpx 24rpx 0; padding: 12rpx 20rpx; background-color: #FEF3C7; border-radius: 12rpx; }
+	.net-lost-text { font-size: 24rpx; color: #92400E; }
+	.scroll { flex: 1; }
+	.content { padding: 24px 16px 36px; }
+	.muted { color: #6a6762; font-size: 12px; }
+	/* ---------- 口令门 ---------- */
+	.gate { flex: 1; display: flex; align-items: center; justify-content: center; padding: 0 28px; }
+	.gate-card { width: 100%; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 18px; padding: 28px 20px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 22px rgba(28,25,23,.08); }
+	.seal { width: 46px; height: 46px; border-radius: 10px; background-color: #C2410C; display: flex; align-items: center; justify-content: center; transform: rotate(4deg); box-shadow: 0 6px 14px rgba(194,65,12,.35); }
+	.seal-char { color: #FFFEFB; font-family: serif; font-size: 24px; font-weight: 900; }
+	.gate-title { display: block; font-family: serif; font-size: 21px; font-weight: 900; letter-spacing: .12em; margin-top: 12px; }
+	.gate-sub { display: block; color: #8A8F82; font-size: 11.5px; margin-top: 6px; }
+	.gate-input { width: 100%; height: 46px; box-sizing: border-box; padding: 0 12px; background-color: #F2F3EF; border: 1px solid #E7E3DA; border-radius: 11px; font-size: 15px; margin-top: 18px; text-align: center; }
+	.ph { color: #B8B2A8; }
+	.gate-err { color: #C2410C; font-size: 12px; font-weight: 600; margin-top: 10px; }
+	/* ---------- 通用按钮 ---------- */
+	.primary { width: 100%; height: 46px; background-color: #C2410C; background-image: linear-gradient(180deg, #D4511B, #C2410C 55%, #9A3412); color: #FFFEFB; border: 0; border-radius: 13px; font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-top: 16px; box-shadow: 0 8px 18px rgba(194,65,12,.3); }
+	/* ---------- 头部 ---------- */
+	.header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
+	.page-title { display: block; font-family: serif; font-size: 24px; font-weight: 900; letter-spacing: .1em; }
+	.header-sub { display: block; font-family: monospace; font-size: 11px; color: #8A8F82; margin-top: 4px; }
+	.header-btns { display: flex; flex-direction: row; align-items: center; }
+	.refresh { width: 64px; height: 36px; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 999px; font-size: 13px; color: #57534E; padding: 0; line-height: 34px; margin-left: 8px; }
+	/* ---------- Tab ---------- */
+	.tabs { display: flex; flex-direction: row; margin-top: 16px; background-color: #EDEAE3; border-radius: 12px; padding: 3px; }
+	.tab { flex: 1; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+	.tab-on { background-color: #FFFEFB; box-shadow: 0 2px 6px rgba(28,25,23,.08); }
+	.tab-text { font-size: 14px; font-weight: 600; color: #79716B; }
+	.tab-text-on { color: #C2410C; }
+	/* ---------- 蓝牙面板 ---------- */
+	.bt-panel { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(28,25,23,.05); }
+	.bt-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
+	.bt-title { font-size: 15px; font-weight: 800; }
+	.bt-close { padding: 4px 10px; border: 1px solid #E7E3DA; border-radius: 999px; }
+	.bt-close-text { font-size: 12px; color: #79716B; }
+	.bt-status { display: block; font-family: monospace; font-size: 12px; color: #57534E; margin-top: 8px; }
+	.bt-scan { width: 100%; height: 40px; border-radius: 11px; background-color: #1C1917; color: #FDBA74; font-size: 13.5px; font-weight: 700; border: 0; line-height: 40px; padding: 0; margin: 10px 0 0 0; }
+	.bt-dev { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding: 10px 2px; border-bottom: 1px dashed #E7E3DA; }
+	.bt-dev-name { font-size: 14px; font-weight: 600; }
+	.bt-dev-conn { font-size: 12px; color: #C2410C; font-weight: 700; }
+	.bt-tip { display: block; font-size: 11.5px; color: #8A8F82; margin-top: 8px; }
+	/* ---------- 汇总卡 ---------- */
+	.sum-card { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(28,25,23,.05); }
+	.sum-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px dashed #E7E3DA; }
+	.sum-date { font-family: serif; font-size: 20px; font-weight: 900; letter-spacing: .06em; }
+	.sum-badge { border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
+	.badge-cut { background-color: #1C1917; color: #FDBA74; }
+	.badge-live { background-color: #FDF1E8; color: #C2410C; }
+	.line { display: flex; flex-direction: row; align-items: center; padding: 9px 0; border-bottom: 1px dashed #E7E3DA; }
+	.line-name { flex: 1; font-size: 14px; font-weight: 600; color: #44403C; }
+	.line-qty { font-family: monospace; font-size: 13px; color: #79716B; }
+	.line-amount { font-family: monospace; font-size: 14px; font-weight: 800; color: #1C1917; margin-left: 14px; min-width: 72px; text-align: right; }
+	.sum-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-top: 10px; }
+	.sum-meta { font-size: 12px; color: #79716B; }
+	.sum-total { font-family: monospace; font-size: 16px; font-weight: 800; color: #C2410C; }
+	.sec-title { display: block; color: #8A8F82; font-size: 11px; font-weight: 700; letter-spacing: .2em; margin: 18px 2px 8px; }
+	/* ---------- 订单卡 ---------- */
+	.order-card { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 13px 14px; margin-bottom: 12px; box-shadow: 0 6px 14px rgba(28,25,23,.05); }
+	.order-cancel { opacity: .55; }
+	.oc-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
+	.oc-no { font-family: monospace; font-size: 13px; font-weight: 800; letter-spacing: .04em; }
+	.oc-status { border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
+	.st-pending { background-color: #FDF1E8; color: #C2410C; }
+	.st-cooking { background-color: #1C1917; color: #FDBA74; }
+	.st-ready { background-color: #E8F6EC; color: #2E7D32; }
+	.st-cancel { background-color: #EDEAE3; color: #79716B; }
+	.oc-cust { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; margin-top: 9px; }
+	.oc-name { font-size: 14px; font-weight: 700; }
+	.oc-phone { font-family: monospace; font-size: 12px; color: #79716B; margin-left: 9px; }
+	.oc-note { display: block; color: #9A3412; font-size: 12px; margin-top: 5px; }
+	.oc-items { margin-top: 8px; border-top: 1px dashed #E7E3DA; }
+	.oc-item { display: flex; flex-direction: row; justify-content: space-between; padding: 6px 0; }
+	.oc-item-name { font-size: 13px; color: #44403C; }
+	.oc-item-price { font-family: monospace; font-size: 13px; color: #1C1917; }
+	.oc-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; border-top: 1px dashed #E7E3DA; padding-top: 9px; margin-top: 2px; }
+	.oc-time { font-family: monospace; font-size: 11.5px; color: #8A8F82; }
+	.oc-total { font-family: monospace; font-size: 15px; font-weight: 800; color: #C2410C; }
+	.oc-actions { display: flex; flex-direction: row; align-items: center; margin-top: 11px; }
+	.act { height: 40px; border-radius: 11px; font-size: 13.5px; font-weight: 700; margin: 0; padding: 0; line-height: 38px; }
+	.act-main { flex: 1; background-color: #C2410C; background-image: linear-gradient(180deg, #D4511B, #C2410C 55%, #9A3412); color: #FFFEFB; border: 0; box-shadow: 0 4px 10px rgba(194,65,12,.28); }
+	.act-main[disabled] { background-color: #C9C4BB; background-image: none; box-shadow: none; }
+	.act-print { width: 64px; background-color: #FFFEFB; border: 1px solid #E7E3DA; color: #57534E; margin-left: 9px; }
+	.act-cancel { width: 86px; background-color: #FFFEFB; border: 1px solid #E7E3DA; color: #79716B; margin-left: 9px; }
+	.done-tip { flex: 1; background-color: #E8F6EC; border-radius: 11px; height: 40px; display: flex; align-items: center; justify-content: center; }
+	.done-tip-text { color: #2E7D32; font-size: 13px; font-weight: 700; }
+	/* ---------- 菜单发布 ---------- */
+	.menu-head { margin-top: 14px; }
+	.pill-row { display: flex; flex-direction: row; align-items: center; }
+	.pill { padding: 7px 14px; border-radius: 999px; background-color: #FFFEFB; border: 1px solid #E7E3DA; margin-right: 8px; }
+	.pill-on { background-color: #1C1917; border-color: #1C1917; }
+	.pill-text { font-size: 12.5px; color: #57534E; font-weight: 600; }
+	.pill-text-on { color: #FDBA74; }
+	.menu-date-hint { display: block; font-family: monospace; font-size: 11px; color: #8A8F82; margin-top: 8px; }
+	.dish-card { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 14px; padding: 11px 13px; margin-top: 10px; box-shadow: 0 4px 10px rgba(28,25,23,.04); }
+	.dish-off { opacity: .55; }
+	.dc-row1 { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
+	.dc-name { font-size: 14.5px; font-weight: 700; }
+	.dc-price { font-family: monospace; font-size: 14px; font-weight: 800; color: #C2410C; }
+	.dc-row2 { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+	.dc-cat { font-size: 11px; color: #79716B; border: 1px solid #E7E3DA; border-radius: 6px; padding: 2px 7px; }
+	.dc-badge { font-size: 10.5px; border-radius: 6px; padding: 2px 7px; margin-left: 6px; font-weight: 700; }
+	.dc-badge-custom { background-color: #FDF1E8; color: #C2410C; }
+	.dc-badge-off { background-color: #1C1917; color: #FDBA74; }
+	.dc-ops { display: flex; flex-direction: row; margin-top: 9px; border-top: 1px dashed #E7E3DA; padding-top: 9px; }
+	.dc-op { padding: 5px 12px; background-color: #F2F3EF; border-radius: 8px; margin-right: 8px; }
+	.dc-op-text { font-size: 12px; color: #57534E; font-weight: 600; }
+	.dc-op-del { color: #C2410C; }
+	.add-dish { height: 46px; border: 1px dashed #C9C4BB; border-radius: 14px; margin-top: 12px; display: flex; align-items: center; justify-content: center; }
+	.add-dish-text { color: #79716B; font-size: 13.5px; font-weight: 600; }
+	.edit-card { background-color: #FDF6EF; border: 1px solid #E7C9A9; border-radius: 16px; padding: 14px; margin-top: 12px; }
+	.edit-title { display: block; font-size: 13px; font-weight: 800; color: #9A3412; letter-spacing: .08em; }
+	.edit-row { display: flex; flex-direction: row; align-items: center; margin-top: 10px; }
+	.edit-label { width: 42px; font-size: 12.5px; color: #79716B; }
+	.edit-input { flex: 1; height: 40px; box-sizing: border-box; padding: 0 10px; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 10px; font-size: 14px; }
+	.edit-chips { display: flex; flex-direction: row; margin-top: 12px; }
+	.chip-t { padding: 7px 13px; border-radius: 999px; background-color: #FFFEFB; border: 1px solid #E7E3DA; margin-right: 8px; }
+	.chip-t-on { background-color: #C2410C; border-color: #C2410C; }
+	.chip-t-text { font-size: 12.5px; color: #57534E; font-weight: 600; }
+	.chip-t-text-on { color: #FFFEFB; }
+	.edit-btns { display: flex; flex-direction: row; align-items: center; margin-top: 13px; }
+	.edit-img { width: 44px; height: 44px; border-radius: 10px; background-color: #E7E4DC; }
+	.edit-img-empty { display: flex; align-items: center; justify-content: center; }
+	.edit-img-empty-t { font-size: 10px; color: #A8A29B; }
+	.act-gen { flex: 1; margin-left: 10px; background-color: #FFFEFB; border: 1px solid #E7C9A9; color: #9A3412; }
+	.act-gen[disabled] { color: #A8A29B; }
+	.pub-row { display: flex; flex-direction: row; align-items: center; margin-top: 16px; }
+	.pub-hint { flex: 1; font-size: 11px; color: #8A8F82; margin-left: 4px; }
+	.footer-space { height: 20px; }
+	.toast { position: fixed; left: 20%; right: 20%; bottom: 100px; background-color: rgba(28,25,23,.88); color: #FFFEFB; padding: 10px; border-radius: 10px; text-align: center; font-size: 13px; }
+</style>

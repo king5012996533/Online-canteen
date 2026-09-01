@@ -1,0 +1,21 @@
+{
+  "bsonType": "object",
+  "required": ["key", "count"],
+  "permission": {
+    "read": false,
+    "write": false
+  },
+  "properties": {
+    "_id": {
+      "description": "与 key 相同的自定义文档 ID（doc(key).set 初始化时写入）"
+    },
+    "key": {
+      "bsonType": "string",
+      "description": "计数器键，如 order_20260829（按天自增当日订单序号）"
+    },
+    "count": {
+      "bsonType": "number",
+      "description": "当前计数（dbCmd.inc(1) 自增）"
+    }
+  }
+}

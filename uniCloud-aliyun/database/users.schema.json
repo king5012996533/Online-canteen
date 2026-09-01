@@ -1,0 +1,33 @@
+{
+  "bsonType": "object",
+  "required": ["openid"],
+  "permission": {
+    "read": false,
+    "write": false
+  },
+  "properties": {
+    "_id": {
+      "description": "系统自动生成的文档 ID"
+    },
+    "openid": {
+      "bsonType": "string",
+      "description": "微信小程序 openid，用户唯一标识"
+    },
+    "token": {
+      "bsonType": "string",
+      "description": "登录令牌（每次 login 换新），前端 http 层自动随请求携带"
+    },
+    "profile": {
+      "bsonType": "object",
+      "description": "用户资料 {name, phone, location}"
+    },
+    "created_at": {
+      "bsonType": "number",
+      "description": "建档时间 epoch 毫秒"
+    },
+    "last_login_at": {
+      "bsonType": "number",
+      "description": "最近一次登录时间 epoch 毫秒"
+    }
+  }
+}

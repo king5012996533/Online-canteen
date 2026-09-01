@@ -1,0 +1,12 @@
+# HBuilderX / uni-app
+unpackage/
+.hbuilderx/
+node_modules/
+
+# 本地备份文件
+*.bak
+*.bak-*
+
+# 系统
+.DS_Store
+Thumbs.db

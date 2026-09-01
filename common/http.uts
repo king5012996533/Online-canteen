@@ -1,0 +1,33 @@
+// 统一网络层：全项目唯一一份云函数 HTTP 封装（index / profile / admin 共用）
+// 约定：
+//  - 云函数响应信封 { ok: true, data } / { ok: false, err }；网络失败 resolve(null)
+//  - mod 由 path 前缀推断（'/cf-menu' '/cf-order' '/cf-admin' '/cf-user'）
+//  - 用户登录态 token 自动注入（storage key: xk_user_token），业务代码不要再手动传 token
+import { API_BASE } from './config.uts'
+
+export function requestJson(path: string, data: UTSJSONObject): Promise<UTSJSONObject | null> {
+	return requestJsonTimeout(path, data, 6000)
+}
+
+// AI 生图等慢接口用长超时
+export function requestJsonTimeout(path: string, data: UTSJSONObject, timeoutMs: number): Promise<UTSJSONObject | null> {
+	let mod = 'menu'
+	if (path.indexOf('/cf-admin') === 0) { mod = 'admin' }
+	else if (path.indexOf('/cf-order') === 0) { mod = 'order' }
+	else if (path.indexOf('/cf-user') === 0) { mod = 'user' }
+	else if (path.indexOf('/cf-menu') === 0) { mod = 'menu' }
+	data['mod'] = mod
+	const t = uni.getStorageSync('xk_user_token')
+	if (t !== '' && t !== null) { data['token'] = t }
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		uni.request<UTSJSONObject>({
+			url: API_BASE + '/cf-api',
+			method: 'POST',
+			data: data,
+			header: { 'Content-Type': 'application/json' } as UTSJSONObject,
+			timeout: timeoutMs,
+			success: (res) => { resolve(res.data) },
+			fail: (err) => { console.error('request fail', err); resolve(null) }
+		})
+	})
+}

@@ -1,0 +1,61 @@
+{
+  "bsonType": "object",
+  "required": ["menu_date", "name"],
+  "permission": {
+    "read": false,
+    "write": false
+  },
+  "properties": {
+    "_id": {
+      "description": "系统自动生成的文档 ID"
+    },
+    "id": {
+      "bsonType": "string",
+      "description": "菜品业务 ID（模板编号，如 veg1 / mix2），订单 items 用它引用菜品"
+    },
+    "menu_date": {
+      "bsonType": "string",
+      "description": "菜单日期 YYYY-MM-DD（北京时间）；模板记录为空字符串"
+    },
+    "category": {
+      "bsonType": "string",
+      "description": "分类：素菜 / 荤素搭配 / 纯荤"
+    },
+    "name": {
+      "bsonType": "string",
+      "description": "菜名"
+    },
+    "desc": {
+      "bsonType": "string",
+      "description": "描述"
+    },
+    "base_price": {
+      "bsonType": "number",
+      "description": "起价（元），返回前端时转 basePrice"
+    },
+    "can_custom_price": {
+      "bsonType": "bool",
+      "description": "是否允许加价，返回前端时转 canCustomPrice"
+    },
+    "image": {
+      "bsonType": "string",
+      "description": "图片路径，如 /static/dishes/veg1.png"
+    },
+    "sold_out": {
+      "bsonType": "bool",
+      "description": "是否售罄，返回前端时转 soldOut"
+    },
+    "sort": {
+      "bsonType": "number",
+      "description": "排序值，越小越靠前"
+    },
+    "is_template": {
+      "bsonType": "bool",
+      "description": "是否菜品模板（用于每天播种今日菜单）"
+    },
+    "created_at": {
+      "bsonType": "number",
+      "description": "创建时间 epoch 毫秒"
+    }
+  }
+}
