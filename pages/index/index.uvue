@@ -1,71 +1,101 @@
 <template>
 	<view class="page">
 		<scroll-view class="scroll" scroll-y="true" :scroll-into-view="menuAnchor">
-			<!-- 屏1 首页：品牌招牌 + 倒计时 -->
+			<!-- 屏1 首页：品牌行 + 开火时刻轴 + 今日主打 -->
 			<view v-if="screen === 'home'" class="home-content">
-				<text class="tagline">写字楼现炒午餐 · 大堂自取</text>
 				<view class="brand-row">
-					<view class="brand-line"><text class="brand">富记</text><text class="brand brand-red">线上</text><text class="brand">饭堂</text></view>
-					<view class="seal"><text class="seal-char">富</text></view>
+					<view class="brand-left"><text class="wordmark">富记</text><text class="g-cap brand-sub">FUJI 线上饭堂</text></view>
+					<view class="loc-pill" @click="goProfile"><view class="loc-dot"></view><text class="loc-text">{{locLabel}}</text></view>
 				</view>
-				<view class="hero-wrap">
-					<image class="hero" src="/static/dishes/hero.png" mode="aspectFill"></image>
-					<view class="hero-cap"><text class="hero-title">今日现炒 · 出锅即达</text><text class="hero-note">大锅猛火，锅气从厨房直达大堂</text></view>
+				<view class="timeline">
+					<view class="tl-now">
+						<view class="tl-status"><view class="tl-livedot"></view><text class="tl-status-text">{{tlStatus}}</text></view>
+						<text class="tl-right">{{tlRight}}</text>
+					</view>
+					<view class="tl-track">
+						<view class="tl-done" :style="{width: tlPos + '%'}"></view>
+						<view class="tl-stop" :class="{'past': tlPos > 0}" style="left: 0%"></view>
+						<view class="tl-stop" :class="{'past': tlPos > 33.3}" style="left: 33.3%"></view>
+						<view class="tl-stop" :class="{'past': tlPos > 66.6}" style="left: 66.6%"></view>
+						<view class="tl-stop" :class="{'past': tlPos > 99}" style="left: 100%"></view>
+						<view class="tl-nowdot" :style="{left: tlPos + '%'}"></view>
+					</view>
+					<view class="tl-labels">
+						<text class="tl-label s0">10:00 备菜</text>
+						<text class="tl-label s1">11:00 开火</text>
+						<text class="tl-label s2">11:30 出炉</text>
+						<text class="tl-label s3">13:00 收档</text>
+					</view>
 				</view>
-				<view class="cutoff">
-					<view class="cutoff-left"><text class="cutoff-label">距 截 单</text><text class="countdown">{{countdown}}</text></view>
-					<text class="cutoff-note">{{cutoffPassed ? '已截单，明天上午再来' : '11:00 截单后下锅，13:00 前大堂自取'}}</text>
+				<view class="hero">
+					<view class="hero-pic">
+						<image class="hero-img" src="/static/dishes/hero.png" mode="aspectFill"></image>
+						<view class="hero-chip g-chip-solid"><text class="hero-chip-text">今日现做</text></view>
+					</view>
+					<text class="home-h2">{{homeHeadline}}</text>
+					<text class="home-sub">11:00 截单 · 后厨现炒出锅 · 13:00 前大堂自取 · 免配送费</text>
 				</view>
 				<view class="facts">
-					<view class="chip chip-hot"><text class="chip-text chip-text-hot">11:00 截单</text></view>
-					<view class="chip"><text class="chip-text">现炒现做</text></view>
-					<view class="chip"><text class="chip-text">菜场直供</text></view>
-					<view class="chip"><text class="chip-text">¥16 起送</text></view>
+					<view class="g-chip-outline fact-chip"><text class="fact-text">11:00 截单</text></view>
+					<view class="g-chip-outline fact-chip"><text class="fact-text">现炒现做</text></view>
+					<view class="g-chip-outline fact-chip"><text class="fact-text">菜场直供</text></view>
+					<view class="g-chip-outline fact-chip"><text class="fact-text">¥16 起送</text></view>
 				</view>
-				<button class="primary" @click="openMenu">浏览今日菜单 →</button>
-				<view class="admin-entry" @click="goAdmin">
-					<text class="admin-entry-text">厨房端 ›</text>
-				</view>
+				<button class="g-btn-primary cta" @click="openMenu">浏览今日菜单</button>
+				<view class="admin-entry" @click="goAdmin"><text class="g-sub">厨房端 ›</text></view>
 			</view>
 
-			<!-- 屏2 今日菜单：分类 pill + 菜品徽章 -->
+			<!-- 屏2 今日菜单：分类 chip + 白底大图菜品列表 -->
 			<view v-else-if="screen === 'menu'" class="menu-content">
-				<view class="menu-header"><view><text class="page-title">今日菜单</text><text class="menu-date">{{dateLabel}} · 截单 11:00</text></view><button class="back" @click="screen = 'home'">‹</button></view>
-				<text class="cutoff-warn">⏰ 11:00 截单 · 下单从速</text>
+				<view class="menu-header">
+					<view><text class="g-title">今日菜单</text><text class="menu-date">{{dateLabel}} · 11:00 截单</text></view>
+					<button class="back" @click="screen = 'home'">‹</button>
+				</view>
 				<view class="pills">
 					<view v-for="(category, index) in categories" :key="category" class="pill" :class="{'pill-active': activePill === category}" @click="jumpCategory(category, index)"><text class="pill-text" :class="{'pill-text-active': activePill === category}">{{category}}</text></view>
 				</view>
-				<text v-if="loading" class="muted">正在加载今日菜单…</text>
-				<text v-else-if="dishes.length === 0" class="muted">今日菜单还没发布，早点来看看</text>
+				<text v-if="loading" class="g-sub menu-state">正在加载今日菜单…</text>
+				<text v-else-if="dishes.length === 0" class="g-sub menu-state">今日菜单还没发布，早点来看看</text>
 				<view v-for="(category, index) in categories" :key="category" :id="'cat-' + index" class="category">
-					<text class="category-title">{{category}} · ¥{{minPrice(category)}} 起</text>
+					<view class="cat-head"><text class="cat-title">{{category}}</text><text class="cat-price">¥{{minPrice(category)}} 起</text></view>
 					<view v-for="dish in dishesByCategory(category)" :key="dish.id" class="dish" :class="{sold: dish.sold}">
-						<image class="dish-image" :src="dish.image" mode="aspectFill"></image>
-						<view class="dish-main">
-							<view class="dish-name-row"><text class="dish-name">{{dish.name}}</text><text v-if="dish.custom && !dish.sold" class="badge-add">可加价</text><text v-if="dish.sold" class="badge-out">已售罄</text></view>
-							<text class="dish-desc">{{dish.desc}}</text>
-							<text class="dish-price">¥{{dish.qty > 0 ? dish.pay : dish.price}}{{dish.qty > 0 && dish.pay !== dish.price ? '（已加价）' : ''}}</text>
+						<view class="dish-ph">
+							<image class="dish-image" :src="dish.image" mode="aspectFill"></image>
+							<view v-if="dish.sold" class="dish-sold-chip"><text class="dish-sold-text">已售罄</text></view>
 						</view>
-						<view v-if="dish.sold" class="sold-tag"><text class="sold-tag-text">明日请早</text></view>
-						<view v-else class="stepper"><button class="step-btn step-ghost" @click="changeQty(dish.id, -1)">−</button><text class="step-num">{{dish.qty}}</text><button class="step-btn step-plus" @click="changeQty(dish.id, 1)">＋</button></view>
+						<view class="dish-main">
+							<view class="dish-name-row"><text class="dish-name">{{dish.name}}</text><text v-if="dish.custom && !dish.sold" class="badge-add">可加价</text></view>
+							<text class="dish-desc">{{dish.desc}}</text>
+							<text class="g-price dish-price">¥{{dish.qty > 0 ? dish.pay : dish.price}}{{dish.qty > 0 && dish.pay !== dish.price ? '（已加价）' : ''}}</text>
+						</view>
+						<view v-if="dish.sold" class="add-btn add-dim"><text class="add-plus">＋</text></view>
+						<view v-else-if="dish.qty === 0" class="add-btn" @click="changeQty(dish.id, 1)"><text class="add-plus">＋</text></view>
+						<view v-else class="stepper">
+							<view class="step-btn step-minus" @click="changeQty(dish.id, -1)"><text class="step-char">−</text></view>
+							<text class="step-num">{{dish.qty}}</text>
+							<view class="step-btn step-plus" @click="changeQty(dish.id, 1)"><text class="step-char step-char-plus">＋</text></view>
+						</view>
 					</view>
 				</view>
 			</view>
 
 			<!-- 屏3 结算：订单小结 + 收餐信息 -->
 			<view v-else-if="screen === 'check'" class="check-content">
-				<view class="menu-header"><view><text class="page-title">确认订单</text><text class="menu-sub">截单后开火现炒 · 13:00 前请到大堂取餐</text></view><button class="back" @click="screen = 'menu'">‹</button></view>
-				<view class="order-card">
-					<text class="card-title">今 日 所 点</text>
-					<view v-for="dish in selectedDishes" :key="dish.id" class="order-line"><text class="order-line-name">{{dish.name}} × {{dish.qty}}</text><text class="mono order-line-price">¥{{dish.pay * dish.qty}}</text></view>
-					<view class="order-total"><text class="order-total-label">合计</text><text class="mono total-number">¥{{total}}</text></view>
+				<view class="menu-header">
+					<view><text class="g-title">确认订单</text><text class="menu-date">截单后开火现炒 · 13:00 前请到大堂取餐</text></view>
+					<button class="back" @click="screen = 'menu'">‹</button>
 				</view>
-				<view class="form-field"><view class="form-label-row"><text class="form-label">怎么称呼您</text><text class="req">*</text></view><input v-model="customer.name" placeholder="如：张三 / 3 楼财务" placeholder-class="ph" /></view>
-				<view class="form-field"><view class="form-label-row"><text class="form-label">取餐位置</text><text class="req">*</text></view><input v-model="customer.location" placeholder="例如：产品部 · 18F" placeholder-class="ph" /></view>
-				<view class="form-field"><view class="form-label-row"><text class="form-label">手机号（选填）</text></view><input v-model="customer.phone" type="number" placeholder="异常联系用" placeholder-class="ph" /></view>
-				<view class="form-field"><view class="form-label-row"><text class="form-label">备注（选填）</text></view><input v-model="customer.note" placeholder="忌口、少辣、不要香菜…" placeholder-class="ph" /></view>
-				<view class="notice"><text class="notice-text">🍚 主食随餐附送。提交后如需取消或改动，请在 11:00 截单前联系饭堂。</text></view>
-				<button class="primary" @click="goPay">提交订单 · 去支付</button>
+				<view class="order-card">
+					<text class="g-cap card-title">今日所点</text>
+					<view v-for="dish in selectedDishes" :key="dish.id" class="order-line"><text class="order-line-name">{{dish.name}} × {{dish.qty}}</text><text class="order-line-price">¥{{dish.pay * dish.qty}}</text></view>
+					<view class="order-total"><text class="order-total-label">合计</text><text class="g-price total-number">¥{{total}}</text></view>
+				</view>
+				<view class="form-field"><view class="form-label-row"><text class="g-label">怎么称呼您</text><text class="g-req">*</text></view><input class="g-field-input" v-model="customer.name" placeholder="如：张三 / 3 楼财务" placeholder-class="g-ph" /></view>
+				<view class="form-field"><view class="form-label-row"><text class="g-label">取餐位置</text><text class="g-req">*</text></view><input class="g-field-input" v-model="customer.location" placeholder="例如：产品部 · 18F" placeholder-class="g-ph" /></view>
+				<view class="form-field"><view class="form-label-row"><text class="g-label">手机号（选填）</text></view><input class="g-field-input" v-model="customer.phone" type="number" placeholder="异常联系用" placeholder-class="g-ph" /></view>
+				<view class="form-field"><view class="form-label-row"><text class="g-label">备注（选填）</text></view><input class="g-field-input" v-model="customer.note" placeholder="忌口、少辣、不要香菜…" placeholder-class="g-ph" /></view>
+				<view class="notice"><text class="notice-text">主食随餐附送。提交后如需取消或改动，请在 11:00 截单前联系饭堂。</text></view>
+				<button class="g-btn-primary cta" @click="goPay">提交订单 · 去支付</button>
 			</view>
 
 			<!-- 屏3.5 模拟支付（测试环境）：商户号下来后换成 wx.requestPayment -->
@@ -75,44 +105,52 @@
 					<text class="pay-amount">¥{{total}}</text>
 					<text class="pay-mode">微信支付 · 模拟环境</text>
 				</view>
-				<view class="pay-tip"><text class="pay-tip-text">当前为测试模式：此步不产生真实扣款。微信支付商户号开通后，这里会替换为真正的微信支付。</text></view>
-				<button class="pay-btn" :disabled="submitting" @click="confirmOrder">{{submitting ? '支付中…' : '确认支付'}}</button>
-				<button class="secondary" @click="screen = 'check'">返回修改订单</button>
+				<view class="notice"><text class="notice-text">当前为测试模式：此步不产生真实扣款。微信支付商户号开通后，这里会替换为真正的微信支付。</text></view>
+				<button class="g-btn-primary cta" :disabled="submitting" @click="confirmOrder">{{submitting ? '支付中…' : '确认支付'}}</button>
+				<button class="g-btn-ghost cta" @click="screen = 'check'">返回修改订单</button>
 			</view>
 
-			<!-- 屏4 成功：取餐小票 -->
+			<!-- 屏4 成功：取餐码 + 明细 -->
 			<view v-else class="success-content">
 				<view class="ok-wrap">
 					<view class="success-mark"><text class="success-mark-char">✓</text></view>
 					<text class="success-title">下单成功</text>
-					<text class="muted success-note">饭堂已收到，截单后开火现炒</text>
+					<text class="g-sub success-note">饭堂已收到，截单后开火现炒</text>
 					<view class="ticket">
-						<view class="ticket-head"><text class="ticket-no">NO. {{orderNumber}}</text><text class="ticket-brand">富记线上饭堂</text></view>
+						<view class="pcode-row">
+							<view class="pcode-left"><text class="g-cap">取餐码</text><text class="pcode">{{pickupCode}}</text></view>
+							<text class="ticket-no">NO.{{orderNumber}}</text>
+						</view>
+						<view class="g-hairline"></view>
 						<view class="ticket-body">
-							<view class="pcode-row"><text class="pcode-label">取 餐 码</text><text class="pcode">{{pickupCode}}</text></view>
 							<view v-for="(line, index) in orderItems" :key="index" class="trow"><text class="trow-name">{{line.name}} × {{line.qty}}</text><text class="trow-price">¥{{line.pay * line.qty}}</text></view>
-							<view class="trow"><text class="trow-name trow-name-hl">合计</text><text class="trow-price trow-total">¥{{orderTotal}}</text></view>
-							<view class="trow"><text class="trow-name">取餐人</text><text class="trow-price">{{customer.name || '未填写'}}</text></view>
-							<view class="trow"><text class="trow-name">取餐位置</text><text class="trow-price">{{customer.location || '大堂'}}</text></view>
-							<view class="trow"><text class="trow-name">建议取餐</text><text class="trow-price">12:40 前后</text></view>
+							<view class="trow"><text class="trow-name trow-name-hl">合计</text><text class="g-price trow-total">¥{{orderTotal}}</text></view>
+							<view class="trow"><text class="trow-name trow-dim">取餐人</text><text class="trow-value">{{customer.name || '未填写'}}</text></view>
+							<view class="trow"><text class="trow-name trow-dim">取餐位置</text><text class="trow-value">{{customer.location || '大堂'}}</text></view>
+							<view class="trow"><text class="trow-name trow-dim">建议取餐</text><text class="trow-value">12:40 前后</text></view>
 						</view>
 					</view>
 					<view class="ok-links">
-						<button class="ok-pri" @click="screen = 'menu'">再点一单</button>
-						<button class="ok-sec" @click="toast('请到大堂前台找富记取餐')">联系饭堂</button>
+						<button class="g-btn-primary ok-pri" @click="screen = 'menu'">再点一单</button>
+						<button class="g-btn-ghost ok-sec" @click="toast('请到大堂前台找富记取餐')">联系饭堂</button>
 					</view>
 				</view>
 			</view>
 		</scroll-view>
 		<view v-if="screen === 'menu'" class="cartbar">
-			<view class="cart-progress"><view class="cart-progress-fill" :style="{width: progressWidth + '%'}"></view></view>
-			<view class="cart-row">
-				<text class="cart-hint">{{total >= 16 ? ('已选 ' + itemCount + ' 个菜，可结算') : ('已选 ¥' + total + ' · 再点 ¥' + (16 - total) + ' 可起送')}}</text>
-				<button class="cart-button" :disabled="total < 16 || (cutoffPassed && !testBypass)" @click="checkout">去结算 ¥{{total}}</button>
+			<view class="cart-pill">
+				<view class="cart-left">
+					<view class="cart-bubble"><text class="cart-count">{{itemCount}}</text></view>
+					<view class="cart-sum">
+						<text class="cart-amount">¥{{total}}</text>
+						<text class="cart-hint">{{total >= 16 ? '可结算 · 大堂自取' : '再点 ¥' + (16 - total) + ' 可起送'}}</text>
+					</view>
+				</view>
+				<button class="g-btn-primary cart-go" :disabled="total < 16 || (cutoffPassed && !testBypass)" @click="checkout">去结算</button>
 			</view>
 		</view>
-		<view v-if="priceDish !== null" class="sheet-mask"><view class="sheet"><text class="sheet-kicker">素菜加价</text><text class="sheet-title">{{priceDish?.name}}</text><text class="muted">请输入你愿意支付的价格（不低于 {{priceDish?.price }} 元）</text><input class="price-input" type="number" v-model="customPrice"/><button class="primary" @click="confirmCustomPrice">加入菜单</button><button class="secondary" @click="priceDish = null">取消</button></view></view>
-		<view v-if="toastMessage !== ''" class="toast">{{toastMessage}}</view>
+		<view v-if="priceDish !== null" class="sheet-mask"><view class="sheet"><text class="g-cap">素菜加价</text><text class="sheet-title">{{priceDish?.name}}</text><text class="g-sub">请输入你愿意支付的价格（不低于 {{priceDish?.price}} 元）</text><input class="g-field-input price-input" type="number" v-model="customPrice"/><button class="g-btn-primary cta" @click="confirmCustomPrice">加入菜单</button><button class="g-btn-ghost cta" @click="priceDish = null">取消</button></view></view>
+		<view v-if="toastMessage !== ''" class="g-toast"><text class="toast-text">{{toastMessage}}</text></view>
 	</view>
 </template>
 
@@ -145,9 +183,22 @@
 	const total = computed(() => dishes.value.reduce((sum, dish) => sum + dish.qty * dish.pay, 0))
 	const itemCount = computed(() => dishes.value.reduce((sum, dish) => sum + dish.qty, 0))
 	const selectedDishes = computed(() => dishes.value.filter((dish) => dish.qty > 0))
-	const progressWidth = computed(() => Math.min(100, total.value / 16 * 100))
 	// 取餐码：取订单号尾段（FJ-MMDD-NNN → #NNN）
 	const pickupCode = computed(() => { const no = orderNumber.value; if (no.length >= 3) { return '#' + no.substring(no.length - 3) } return '--' })
+	// 首页主打：第一道在售荤菜（荤素搭配 → 纯荤 → 素菜）
+	const todayDish = computed((): Dish | null => {
+		const pool = dishes.value.filter((dish) => !dish.sold)
+		let pick = pool.find((dish) => dish.category === '荤素搭配')
+		if (pick === null) { pick = pool.find((dish) => dish.category === '纯荤') }
+		if (pick === null) { pick = pool.find((dish) => dish.category === '素菜') }
+		return pick
+	})
+	const homeHeadline = computed((): string => { const dish = todayDish.value; if (dish === null) return '今日菜单已出'; return '今天吃' + dish.name })
+	const locLabel = computed((): string => { const loc = customer.location.trim(); if (loc === '') return '大堂自取'; return loc })
+	// 开火时刻轴：10:00 备菜 → 11:00 开火(截单) → 11:30 出炉 → 13:00 收档
+	const tlPos = ref(0)
+	const tlStatus = ref('')
+	const tlRight = ref('')
 	function dishesByCategory(category: string): Dish[] { return dishes.value.filter((dish) => dish.category === category) }
 	function minPrice(category: string): number { let min = 0; dishes.value.forEach((dish: Dish) => { if (dish.category === category && (min === 0 || dish.price < min)) { min = dish.price } }); return min }
 	function jumpCategory(category: string, index: number) { activePill.value = category; menuAnchor.value = 'cat-' + index }
@@ -159,6 +210,14 @@
 		const dayStart = Math.floor(now.getTime() / 86400000) * 86400000
 		const diff = dayStart + 11 * 3600000 - now.getTime()
 		if (diff <= 0 && !testBypass) { cutoffPassed.value = true; countdown.value = '已截单' } else { cutoffPassed.value = false; if (diff <= 0) { countdown.value = '测试模式' } else { const s = Math.floor(diff / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); countdown.value = h + ':' + pad2(m) + ':' + pad2(s % 60) } }
+		// 时刻轴：分钟数分段线性映射到 0~100%
+		const min = now.getUTCHours() * 60 + now.getUTCMinutes()
+		let pos = 0
+		if (min <= 600) { pos = 0 } else if (min >= 780) { pos = 100 } else if (min <= 660) { pos = (min - 600) / 60 * 33.3 } else if (min <= 690) { pos = 33.3 + (min - 660) / 30 * 33.3 } else { pos = 66.6 + (min - 690) / 90 * 33.4 }
+		tlPos.value = Math.round(pos * 10) / 10
+		const hm = now.getUTCHours() + ':' + pad2(now.getUTCMinutes())
+		if (min < 600) { tlStatus.value = hm + ' · 今日备菜中' } else if (min < 660) { tlStatus.value = hm + ' · 接受点单中' } else if (min < 690) { tlStatus.value = hm + ' · 后厨开火中' } else if (min < 780) { tlStatus.value = hm + ' · 已出炉 · 可取餐' } else { tlStatus.value = '今日已收档 · 明天再来' }
+		if (min < 660) { tlRight.value = '距截单 ' + countdown.value } else if (min < 780) { tlRight.value = '11:30 开始取餐' } else { tlRight.value = '' }
 	}
 	// 菜单指纹：id+菜名+价格+售罄，用于判断厨房端是否发布过新菜单
 	function menuSignature(list: Dish[]): string {
@@ -203,6 +262,8 @@
 	}
 	function openMenu() { screen.value = 'menu' }
 	function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
+	// 取餐点胶囊：跳到「我的」维护常用取餐位置
+	function goProfile() { uni.switchTab({ url: '/pages/profile/profile' }) }
 	function changeQty(id: string, amount: number) {
 		const dish = dishes.value.find((item) => item.id === id)
 		if (dish === null || dish === undefined) return
@@ -319,134 +380,147 @@
 </script>
 
 <style>
-	.page { flex: 1; background-color: #F2F3EF; color: #1C1917; }
+	.page { flex: 1; background-color: #FFFFFF; color: #141418; }
 	.scroll { flex: 1; }
-	.home-content, .menu-content, .check-content, .success-content { padding: 28px 20px 36px; }
-	.muted { color: #6a6762; font-size: 12px; }
-	.mono { font-family: monospace; }
+	.home-content, .menu-content, .check-content, .pay-content, .success-content { padding: 20px 20px 36px; }
 	/* ---------- 首页 ---------- */
-	.tagline { display: block; font-size: 11px; letter-spacing: .3em; color: #8A8F82; margin-bottom: 8px; }
-	.brand-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
-	.brand-line { display: flex; flex-direction: row; align-items: baseline; }
-	.brand { font-family: serif; font-size: 33px; font-weight: 900; letter-spacing: .06em; color: #1C1917; }
-	.brand-red { color: #C2410C; }
-	.seal { width: 46px; height: 46px; border-radius: 10px; background-color: #C2410C; display: flex; align-items: center; justify-content: center; transform: rotate(4deg); box-shadow: 0 6px 14px rgba(194,65,12,.35); }
-	.seal-char { color: #FFFEFB; font-family: serif; font-size: 24px; font-weight: 900; }
-	.hero-wrap { position: relative; margin-top: 14px; border-radius: 18px; overflow: hidden; height: 170px; box-shadow: 0 12px 24px rgba(28,25,23,.15); }
-	.hero { width: 100%; height: 170px; }
-	.hero-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 42px 14px 10px; background-image: linear-gradient(180deg, rgba(20,12,6,0), rgba(20,12,6,.78)); }
-	.hero-title { display: block; color: #FFFEFB; font-family: serif; font-size: 15px; font-weight: 700; letter-spacing: .12em; }
-	.hero-note { display: block; color: rgba(255,255,255,.85); font-size: 11px; margin-top: 3px; letter-spacing: .08em; }
-	.cutoff { background-color: #1C1917; border-radius: 18px; padding: 14px 16px; margin-top: 14px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; box-shadow: 0 10px 22px rgba(28,25,23,.22); }
-	.cutoff-label { display: block; color: #D6D3D1; font-size: 10px; letter-spacing: .25em; font-weight: 700; }
-	.countdown { display: block; font-family: monospace; font-size: 30px; font-weight: 800; color: #FDBA74; margin-top: 4px; }
-	.cutoff-note { color: #A8A29E; font-size: 11px; line-height: 1.7; text-align: right; max-width: 150px; }
-	.chip { border: 1px solid #E7E3DA; background-color: #FFFEFB; border-radius: 999px; padding: 5px 10px; margin: 0 7px 7px 0; }
-	.chip-text { font-size: 11px; color: #57534E; }
-	.chip-hot { border-color: #F1C4AD; background-color: #FDF1E8; }
-	.chip-text-hot { color: #C2410C; font-weight: 700; }
+	.brand-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 8px; }
+	.brand-left { display: flex; flex-direction: column; }
+	.wordmark { font-size: 32px; font-weight: 900; line-height: 40px; color: #141418; }
+	.brand-sub { margin-top: 3px; }
+	.loc-pill { display: flex; flex-direction: row; align-items: center; border: 1px solid #ECECEB; border-radius: 999px; padding: 7px 12px; background-color: #FFFFFF; }
+	.loc-dot { width: 6px; height: 6px; border-radius: 3px; background-color: #FF4A17; margin-right: 6px; }
+	.loc-text { font-size: 12px; font-weight: 600; color: #141418; }
+	/* 开火时刻轴 */
+	.timeline { margin-top: 20px; }
+	.tl-now { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+	.tl-status { display: flex; flex-direction: row; align-items: center; }
+	.tl-livedot { width: 8px; height: 8px; border-radius: 4px; background-color: #FF4A17; margin-right: 7px; }
+	.tl-status-text { font-size: 12px; font-weight: 700; color: #141418; }
+	.tl-right { font-size: 11px; color: #86868B; }
+	.tl-track { position: relative; height: 2px; background-color: #ECECEB; border-radius: 1px; }
+	.tl-done { position: absolute; left: 0; top: 0; height: 2px; background-color: #141418; border-radius: 1px; }
+	.tl-stop { position: absolute; top: -2px; width: 6px; height: 6px; border-radius: 3px; background-color: #D9D9D7; margin-left: -3px; }
+	.tl-stop.past { background-color: #141418; }
+	.tl-nowdot { position: absolute; top: -5px; width: 12px; height: 12px; border-radius: 6px; background-color: #FF4A17; border: 2px solid #FFFFFF; margin-left: -6px; }
+	.tl-labels { position: relative; height: 16px; margin-top: 8px; }
+	.tl-label { position: absolute; font-size: 10px; color: #86868B; }
+	.tl-label.s0 { left: 0; color: #141418; font-weight: 600; }
+	.tl-label.s1 { left: 33.3%; margin-left: -24px; }
+	.tl-label.s2 { left: 66.6%; margin-left: -24px; }
+	.tl-label.s3 { right: 0; }
+	/* 主打大图 */
+	.hero { margin-top: 18px; }
+	.hero-pic { position: relative; border-radius: 20px; overflow: hidden; height: 190px; background-color: #F6F6F4; }
+	.hero-img { width: 100%; height: 190px; }
+	.hero-chip { position: absolute; left: 12px; bottom: 12px; }
+	.hero-chip-text { color: #FFFFFF; font-size: 11px; font-weight: 600; }
+	.home-h2 { display: block; font-size: 24px; font-weight: 900; margin-top: 14px; color: #141418; }
+	.home-sub { display: block; font-size: 12px; color: #86868B; margin-top: 6px; line-height: 1.6; }
 	.facts { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 14px; }
-	.admin-entry { display: flex; flex-direction: row; justify-content: center; margin-top: 14px; }
-	.admin-entry-text { color: #B8B2A8; font-size: 12px; }
-	/* ---------- 通用按钮 ---------- */
-	.primary { width: 100%; height: 48px; background-color: #C2410C; background-image: linear-gradient(180deg, #D4511B, #C2410C 55%, #9A3412); color: #FFFEFB; border: 0; border-radius: 14px; font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-top: 16px; box-shadow: 0 8px 18px rgba(194,65,12,.3); }
-	.primary[disabled] { background-color: #C9C4BB; background-image: none; color: #F2F3EF; }
-	.back { width: 40px; height: 40px; border-radius: 20px; background-color: #FFFEFB; border: 1px solid #E7E3DA; font-size: 30px; line-height: 30px; color: #57534E; }
+	.fact-chip { margin: 0 7px 7px 0; }
+	.fact-text { font-size: 11px; font-weight: 600; color: #141418; }
+	.admin-entry { display: flex; flex-direction: row; justify-content: center; margin-top: 16px; }
+	/* ---------- 通用 ---------- */
+	.cta { width: 100%; margin-top: 18px; }
+	.back { width: 36px; height: 36px; border-radius: 18px; background-color: #FFFFFF; border: 1px solid #ECECEB; font-size: 20px; line-height: 34px; color: #86868B; margin: 0; padding: 0; }
 	/* ---------- 菜单 ---------- */
-	.menu-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-	.page-title { display: block; font-family: serif; font-size: 24px; font-weight: 900; letter-spacing: .1em; }
-	.menu-date { display: block; font-family: monospace; font-size: 11px; color: #8A8F82; margin-top: 4px; }
-	.menu-sub { display: block; font-size: 11px; color: #8A8F82; margin-top: 4px; }
-	.cutoff-warn { display: block; color: #C2410C; font-size: 12px; font-weight: 600; margin-top: 8px; }
-	.pills { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 12px; }
-	.pill { border: 1px solid #E7E3DA; background-color: #FFFEFB; border-radius: 999px; padding: 6px 13px; margin: 0 7px 7px 0; }
-	.pill-active { border-color: #F1C4AD; background-color: #FDF1E8; }
-	.pill-text { font-size: 12px; color: #57534E; }
-	.pill-text-active { color: #C2410C; font-weight: 700; }
-	.category-title { display: block; color: #8A8F82; font-size: 11px; font-weight: 700; letter-spacing: .2em; margin: 18px 0 6px; }
-	.dish { display: flex; flex-direction: row; align-items: center; border-top: 1px dashed #E7E3DA; padding: 12px 0; min-height: 86px; }
-	.dish-image { width: 82px; height: 82px; border-radius: 12px; flex-shrink: 0; box-shadow: 0 4px 10px rgba(28,25,23,.1); }
-	.dish-main { flex: 1; min-width: 0; margin-left: 11px; }
+	.menu-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; margin-top: 8px; }
+	.menu-date { display: block; font-size: 11px; color: #86868B; margin-top: 5px; }
+	.pills { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 14px; }
+	.pill { border: 1px solid #ECECEB; background-color: #FFFFFF; border-radius: 999px; padding: 6px 14px; margin: 0 7px 7px 0; }
+	.pill-active { border-color: #141418; background-color: #141418; }
+	.pill-text { font-size: 12px; color: #141418; }
+	.pill-text-active { color: #FFFFFF; font-weight: 700; }
+	.menu-state { display: block; text-align: center; padding: 24px 0; }
+	.cat-head { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; margin: 18px 0 4px; }
+	.cat-title { font-size: 15px; font-weight: 800; color: #141418; }
+	.cat-price { font-size: 11px; color: #86868B; }
+	.dish { display: flex; flex-direction: row; align-items: center; padding: 13px 0; border-bottom: 1px solid #ECECEB; }
+	.category .dish:last-child { border-bottom: 0; }
+	.dish-ph { position: relative; width: 80px; height: 80px; border-radius: 16px; overflow: hidden; background-color: #F6F6F4; flex-shrink: 0; }
+	.dish-image { width: 80px; height: 80px; }
+	.dish.sold .dish-image { opacity: 0.45; }
+	.dish-sold-chip { position: absolute; left: 0; right: 0; top: 30px; display: flex; flex-direction: row; justify-content: center; }
+	.dish-sold-text { background-color: #F6F6F4; color: #86868B; font-size: 10px; font-weight: 600; border-radius: 6px; padding: 4px 8px; }
+	.dish-main { flex: 1; min-width: 0; margin-left: 13px; }
 	.dish-name-row { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; }
-	.dish-name { font-size: 15px; font-weight: 700; }
-	.badge-add { color: #C2410C; background-color: #FDEADD; border-radius: 6px; padding: 2px 6px; font-size: 10px; font-weight: 700; margin-left: 6px; }
-	.badge-out { color: #79716B; background-color: #EDEAE3; border-radius: 6px; padding: 2px 6px; font-size: 10px; font-weight: 700; margin-left: 6px; }
-	.dish-desc { display: block; color: #79716B; font-size: 12px; margin-top: 3px; }
-	.dish-price { display: block; font-family: monospace; font-size: 15px; font-weight: 800; color: #C2410C; margin-top: 5px; }
-	.stepper { display: flex; flex-direction: row; align-items: center; }
-	.step-btn { width: 38px; height: 38px; border-radius: 12px; font-size: 19px; line-height: 34px; margin: 0; padding: 0; }
-	.step-ghost { background-color: #EDEAE3; color: #A8A29E; border: 0; }
-	.step-plus { background-color: #C2410C; background-image: linear-gradient(180deg, #D4511B, #C2410C 55%, #9A3412); color: #FFFEFB; border: 0; margin-left: 7px; box-shadow: 0 4px 8px rgba(194,65,12,.3); }
-	.step-num { min-width: 20px; text-align: center; font-size: 14px; font-weight: 700; }
-	.sold { opacity: .55; }
-	.sold-tag { border: 1px solid #E7E3DA; background-color: #EDEAE3; border-radius: 8px; padding: 5px 8px; }
-	.sold-tag-text { color: #79716B; font-size: 11px; }
+	.dish-name { font-size: 16px; font-weight: 700; color: #141418; }
+	.dish.sold .dish-name { color: #86868B; }
+	.badge-add { color: #FF4A17; background-color: #FFFFFF; border: 1px solid #FF4A17; border-radius: 6px; padding: 1px 6px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+	.dish-desc { display: block; color: #86868B; font-size: 12px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.dish-price { display: block; font-size: 18px; margin-top: 8px; }
+	.dish.sold .dish-price { color: #86868B; }
+	.add-btn { width: 30px; height: 30px; border-radius: 15px; background-color: #141418; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+	.add-plus { color: #FFFFFF; font-size: 17px; line-height: 17px; margin-top: -2px; }
+	.add-dim { background-color: #F6F6F4; }
+	.add-dim .add-plus { color: #B9B9BE; }
+	.stepper { display: flex; flex-direction: row; align-items: center; flex-shrink: 0; }
+	.step-btn { width: 28px; height: 28px; border-radius: 14px; display: flex; align-items: center; justify-content: center; }
+	.step-minus { background-color: #F6F6F4; }
+	.step-char { color: #86868B; font-size: 15px; line-height: 15px; margin-top: -2px; }
+	.step-plus { background-color: #141418; margin-left: 4px; }
+	.step-char-plus { color: #FFFFFF; }
+	.step-num { min-width: 24px; text-align: center; font-size: 14px; font-weight: 700; color: #141418; }
 	/* ---------- 结算 ---------- */
-	.order-card { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 12px 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(28,25,23,.05); }
-	.card-title { display: block; color: #8A8F82; font-size: 11px; font-weight: 700; letter-spacing: .2em; margin-bottom: 8px; }
-	.order-line { display: flex; flex-direction: row; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #E7E3DA; }
-	.order-line-name { font-size: 13px; color: #44403C; }
-	.order-line-price { font-size: 13px; font-weight: 800; color: #1C1917; }
-	.order-total { display: flex; flex-direction: row; justify-content: space-between; padding-top: 10px; margin-top: 2px; border-top: 1px dashed #E7E3DA; }
-	.order-total-label { font-size: 14px; font-weight: 700; }
-	.total-number { font-size: 18px; font-weight: 800; color: #C2410C; }
-	.form-field { margin-top: 12px; }
+	.order-card { margin-top: 16px; }
+	.card-title { display: block; margin-bottom: 10px; }
+	.order-line { display: flex; flex-direction: row; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #ECECEB; }
+	.order-line-name { font-size: 13px; color: #141418; }
+	.order-line-price { font-size: 13px; font-weight: 700; color: #141418; }
+	.order-total { display: flex; flex-direction: row; justify-content: space-between; padding-top: 12px; }
+	.order-total-label { font-size: 14px; font-weight: 700; color: #141418; }
+	.total-number { font-size: 18px; }
+	.form-field { margin-top: 14px; }
 	.form-label-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
-	.form-label { color: #57534E; font-size: 12px; font-weight: 700; letter-spacing: .05em; }
-	.req { color: #C2410C; font-size: 12px; margin-left: 3px; }
-	.form-field input { width: 100%; height: 46px; box-sizing: border-box; padding: 0 12px; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 11px; font-size: 14px; }
-	.ph { color: #B8B2A8; }
-	.notice { background-color: #FDF1E8; border: 1px dashed #F1C4AD; border-radius: 12px; padding: 9px 12px; margin-top: 14px; }
-	.notice-text { color: #9A3412; font-size: 11.5px; line-height: 1.7; }
+	.notice { background-color: #F6F6F4; border-radius: 12px; padding: 10px 12px; margin-top: 16px; }
+	.notice-text { color: #86868B; font-size: 11.5px; line-height: 1.7; }
 	/* ---------- 模拟支付 ---------- */
-	.pay-content { padding: 28px 20px 36px; display: flex; flex-direction: column; align-items: center; }
-	.pay-card { width: 100%; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 26px 16px 22px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 22px rgba(28,25,23,.08); margin-top: 10px; }
+	.pay-content { display: flex; flex-direction: column; align-items: center; }
+	.pay-card { width: 100%; background-color: #FFFFFF; border: 1px solid #ECECEB; border-radius: 20px; padding: 26px 16px 22px; display: flex; flex-direction: column; align-items: center; margin-top: 10px; }
 	.pay-merchant { display: flex; flex-direction: row; align-items: center; }
-	.pay-avatar { width: 40px; height: 40px; border-radius: 10px; background-color: #C2410C; display: flex; align-items: center; justify-content: center; }
-	.pay-avatar-char { color: #FFFEFB; font-family: serif; font-size: 20px; font-weight: 900; }
-	.pay-merchant-name { font-size: 15px; font-weight: 700; margin-left: 9px; }
-	.pay-amount { font-family: monospace; font-size: 44px; font-weight: 800; color: #1C1917; margin-top: 18px; }
-	.pay-mode { color: #8A8F82; font-size: 12px; margin-top: 8px; letter-spacing: .1em; }
-	.pay-tip { width: 100%; background-color: #FDF1E8; border: 1px dashed #F1C4AD; border-radius: 12px; padding: 9px 12px; margin-top: 14px; box-sizing: border-box; }
-	.pay-tip-text { color: #9A3412; font-size: 11.5px; line-height: 1.7; }
-	.pay-btn { width: 100%; height: 48px; background-color: #07C160; color: #FFFEFB; border: 0; border-radius: 14px; font-size: 16px; font-weight: 700; letter-spacing: .1em; margin-top: 20px; box-shadow: 0 8px 18px rgba(7,193,96,.3); }
-	.pay-btn[disabled] { background-color: #C9C4BB; box-shadow: none; }
-	/* ---------- 成功小票 ---------- */
+	.pay-avatar { width: 40px; height: 40px; border-radius: 12px; background-color: #141418; display: flex; align-items: center; justify-content: center; }
+	.pay-avatar-char { color: #FFFFFF; font-size: 20px; font-weight: 900; }
+	.pay-merchant-name { font-size: 15px; font-weight: 700; color: #141418; margin-left: 9px; }
+	.pay-amount { font-size: 44px; font-weight: 800; color: #141418; margin-top: 18px; }
+	.pay-mode { color: #86868B; font-size: 12px; margin-top: 8px; }
+	.pay-content .notice { width: 100%; box-sizing: border-box; }
+	/* ---------- 成功 ---------- */
 	.ok-wrap { display: flex; flex-direction: column; align-items: center; padding-top: 16px; }
-	.success-mark { width: 64px; height: 64px; border-radius: 32px; background-color: #C2410C; background-image: linear-gradient(180deg, #D4511B, #C2410C 55%, #9A3412); display: flex; align-items: center; justify-content: center; box-shadow: 0 12px 26px rgba(194,65,12,.35); }
-	.success-mark-char { color: #FFFEFB; font-size: 30px; }
-	.success-title { display: block; font-family: serif; font-size: 24px; font-weight: 900; letter-spacing: .15em; margin-top: 14px; }
+	.success-mark { width: 64px; height: 64px; border-radius: 32px; background-color: #141418; display: flex; align-items: center; justify-content: center; }
+	.success-mark-char { color: #FFFFFF; font-size: 28px; }
+	.success-title { display: block; font-size: 24px; font-weight: 900; margin-top: 14px; color: #141418; }
 	.success-note { display: block; margin-top: 6px; text-align: center; }
-	.ticket { width: 100%; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; margin-top: 16px; overflow: hidden; box-shadow: 0 10px 22px rgba(28,25,23,.08); }
-	.ticket-head { background-color: #1C1917; padding: 10px 14px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
-	.ticket-no { color: #F2F3EF; font-family: monospace; font-size: 12px; font-weight: 800; letter-spacing: .04em; }
-	.ticket-brand { color: #A8A29E; font-size: 10px; letter-spacing: .2em; }
-	.ticket-body { padding: 11px 14px 13px; }
-	.pcode-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px dashed #E7E3DA; }
-	.pcode-label { color: #79716B; font-size: 11px; letter-spacing: .15em; }
-	.pcode { font-family: monospace; font-size: 26px; font-weight: 800; color: #C2410C; letter-spacing: .08em; }
-	.trow { display: flex; flex-direction: row; justify-content: space-between; padding-top: 8px; }
-	.trow-name { font-size: 12.5px; color: #44403C; }
-	.trow-price { font-size: 12.5px; color: #1C1917; font-family: monospace; }
-	.trow-name-hl { color: #1C1917; font-weight: 700; }
-	.trow-total { color: #C2410C; font-size: 16px; font-weight: 800; }
-	.ok-links { display: flex; flex-direction: row; width: 100%; margin-top: 14px; }
-	.ok-pri { flex: 1; height: 44px; background-color: #1C1917; color: #F2F3EF; border: 0; border-radius: 12px; font-size: 13px; font-weight: 700; letter-spacing: .1em; }
-	.ok-sec { flex: 1; height: 44px; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 12px; font-size: 13px; font-weight: 700; color: #57534E; margin-left: 9px; letter-spacing: .1em; }
-	/* ---------- 购物车栏 ---------- */
-	.cartbar { background-color: #FFFEFB; border-top: 1px solid #E7E3DA; padding: 10px 16px 14px; box-shadow: 0 -8px 20px rgba(28,25,23,.06); }
-	.cart-progress { height: 5px; border-radius: 999px; background-color: #EDEAE3; overflow: hidden; }
-	.cart-progress-fill { height: 5px; border-radius: 999px; background-image: linear-gradient(90deg, #D97706, #C2410C); }
-	.cart-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 9px; }
-	.cart-hint { font-size: 11.5px; color: #79716B; flex: 1; }
-	.cart-button { min-width: 118px; height: 44px; background-color: #C2410C; background-image: linear-gradient(180deg, #D4511B, #C2410C 55%, #9A3412); color: #FFFEFB; border: 0; border-radius: 999px; font-size: 13.5px; font-weight: 700; padding: 0 16px; box-shadow: 0 6px 14px rgba(194,65,12,.3); }
-	.cart-button[disabled] { background-color: #C9C4BB; background-image: none; box-shadow: none; }
+	.ticket { width: 100%; border: 1px solid #ECECEB; border-radius: 20px; margin-top: 18px; padding: 16px; box-sizing: border-box; }
+	.pcode-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding-bottom: 14px; }
+	.pcode-left { display: flex; flex-direction: column; }
+	.pcode { font-size: 34px; font-weight: 900; color: #141418; margin-top: 6px; letter-spacing: 0.06em; }
+	.ticket-no { font-size: 11px; color: #86868B; }
+	.ticket-body { padding-top: 12px; }
+	.trow { display: flex; flex-direction: row; justify-content: space-between; padding-top: 9px; }
+	.trow-name { font-size: 12.5px; color: #141418; }
+	.trow-name-hl { font-weight: 700; }
+	.trow-dim { color: #86868B; }
+	.trow-price { font-size: 12.5px; color: #141418; font-weight: 700; }
+	.trow-total { font-size: 16px; }
+	.trow-value { font-size: 12.5px; color: #141418; }
+	.ok-links { display: flex; flex-direction: row; width: 100%; margin-top: 18px; }
+	.ok-pri { flex: 1; }
+	.ok-sec { flex: 1; margin-left: 10px; }
+	/* ---------- 购物车胶囊 ---------- */
+	.cartbar { background-color: #FFFFFF; padding: 10px 16px 14px; }
+	.cart-pill { height: 62px; border-radius: 999px; background-color: #FFFFFF; display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 0 8px 0 12px; border: 1px solid #ECECEB; box-shadow: 0 10px 30px rgba(20,20,24,0.12); }
+	.cart-left { display: flex; flex-direction: row; align-items: center; }
+	.cart-bubble { width: 40px; height: 40px; border-radius: 20px; background-color: #141418; display: flex; align-items: center; justify-content: center; }
+	.cart-count { color: #FFFFFF; font-size: 14px; font-weight: 700; }
+	.cart-sum { display: flex; flex-direction: column; margin-left: 10px; }
+	.cart-amount { font-size: 17px; font-weight: 800; color: #141418; }
+	.cart-hint { font-size: 10px; color: #86868B; margin-top: 1px; }
+	.cart-go { height: 44px; padding: 0 22px; font-size: 14px; }
 	/* ---------- 加价弹层 / 提示 ---------- */
-	.sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background-color: rgba(28,25,23,.32); display: flex; align-items: flex-end; }
-	.sheet { background-color: #FFFEFB; width: 100%; padding: 20px; border-radius: 22px 22px 0 0; }
-	.sheet-kicker { color: #8A8F82; font-size: 12px; letter-spacing: .2em; }
-	.sheet-title { display: block; font-family: serif; font-size: 22px; font-weight: 900; margin: 8px 0; }
-	.price-input { height: 46px; border: 1px solid #E7E3DA; border-radius: 12px; margin: 16px 0 12px; padding: 0 12px; background-color: #FFFEFB; }
-	.secondary { width: 100%; height: 44px; background-color: transparent; border: 1px solid #E7E3DA; border-radius: 13px; margin-top: 8px; color: #1C1917; }
-	.toast { position: fixed; left: 20%; right: 20%; bottom: 100px; background-color: rgba(28,25,23,.88); color: #FFFEFB; padding: 10px; border-radius: 10px; text-align: center; font-size: 13px; }
+	.sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background-color: rgba(20,20,24,0.32); display: flex; align-items: flex-end; }
+	.sheet { background-color: #FFFFFF; width: 100%; padding: 20px; border-radius: 22px 22px 0 0; }
+	.sheet-title { display: block; font-size: 22px; font-weight: 900; margin: 8px 0; color: #141418; }
+	.price-input { margin: 16px 0 4px; }
+	.toast-text { color: #FFFFFF; font-size: 13px; text-align: center; }
 </style>

@@ -1,17 +1,22 @@
-﻿{
-	"pages": [ //pages鏁扮粍涓涓€椤硅〃绀哄簲鐢ㄥ惎鍔ㄩ〉锛屽弬鑰冿細https://doc.dcloud.net.cn/uni-app-x/collocation/pagesjson.html
+{
+	"pages": [
 		{
 			"path": "pages/index/index",
 			"style": {
-				"navigationBarTitleText": "富记线上饭堂"
+				"navigationBarTitleText": "富记线上饭堂",
+				"navigationBarBackgroundColor": "#FFFFFF",
+				"navigationBarTextStyle": "black",
+				"backgroundColor": "#FFFFFF"
 			}
 		},
 		{
 			"path": "pages/profile/profile",
 			"style": {
-				"navigationBarTitleText": "个人中心",
+				"navigationBarTitleText": "我的",
 				"enablePullDownRefresh": true,
-				"backgroundColor": "#F2F3EF"
+				"backgroundColor": "#FFFFFF",
+				"navigationBarBackgroundColor": "#FFFFFF",
+				"navigationBarTextStyle": "black"
 			}
 		},
 		{
@@ -24,27 +29,30 @@
 		}
 	],
 	"tabBar": {
-		"color": "#8A8A8A",
-		"selectedColor": "#1C1917",
+		"color": "#86868B",
+		"selectedColor": "#141418",
 		"backgroundColor": "#FFFFFF",
 		"borderStyle": "black",
 		"list": [
 			{
 				"pagePath": "pages/index/index",
-				"text": "首页"
+				"text": "首页",
+				"iconPath": "static/tab/home.png",
+				"selectedIconPath": "static/tab/home-on.png"
 			},
 			{
 				"pagePath": "pages/profile/profile",
-				"text": "我的"
+				"text": "我的",
+				"iconPath": "static/tab/me.png",
+				"selectedIconPath": "static/tab/me-on.png"
 			}
 		]
 	},
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
 		"navigationBarTitleText": "富记线上饭堂",
-		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F8F8F8"
+		"navigationBarBackgroundColor": "#FFFFFF",
+		"backgroundColor": "#FFFFFF"
 	},
 	"uniIdRouter": {}
 }
-
