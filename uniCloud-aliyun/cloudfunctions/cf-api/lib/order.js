@@ -65,14 +65,12 @@ async function orderCreate(event) {
 			return fail('“' + dish.name + '”数量需为 1-' + MAX_QTY_PER_ITEM + ' 的整数');
 		}
 		let pay = it.pay;
-		if (!dish.can_custom_price) {
-			pay = dish.base_price; // 固定价菜品，强制按底价，不信任客户端传值
-		} else {
-			if (typeof pay !== 'number' || !isFinite(pay) || pay < dish.base_price) {
-				return fail('价格不能低于起价');
-			}
-			pay = round2(pay);
+		// 全部菜品自由定价：pay 不得低于最低售价（can_custom_price 字段保留在数据模型，
+		// 下单逻辑不再分支——避免历史菜单数据的固定价标记让荤菜退回按份计价）
+		if (typeof pay !== 'number' || !isFinite(pay) || pay < dish.base_price) {
+			return fail('价格不能低于最低售价 ¥' + dish.base_price);
 		}
+		pay = round2(pay);
 		orderItems.push({ id: dish.id, name: dish.name, pay: pay, qty: qty }); // name 存下单时的菜品名快照
 		total += pay * qty;
 		customExtra += (pay - dish.base_price) * qty;
