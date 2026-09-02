@@ -7,15 +7,16 @@ const { ok, bjNow, bjDateStr, cutoffTsOf } = require('./util.js');
 
 // 内置菜品模板兜底数据：若 dishes 表中没有任何 is_template=true 的记录，
 // 则在播种今日菜单前先用这份内置数据补种模板（sort 按下标 0-7）。
+// 全部菜品为"最低售价 + 自由定价"模式：用户按价格加购，付多少给多少份量（canCustomPrice 均 true）
 const TEMPLATE_SEED = [
-	{ id: 'veg1', category: '素菜', name: '清炒时令青菜', desc: '当天档口青菜 · 可加价', basePrice: 3, canCustomPrice: true, image: '/static/dishes/veg1.png' },
-	{ id: 'veg2', category: '素菜', name: '虎皮青椒', desc: '微辣，可加价加肉', basePrice: 3, canCustomPrice: true, image: '/static/dishes/veg2.png' },
+	{ id: 'veg1', category: '素菜', name: '清炒时令青菜', desc: '当天档口青菜 · 按价格选份量', basePrice: 3, canCustomPrice: true, image: '/static/dishes/veg1.png' },
+	{ id: 'veg2', category: '素菜', name: '虎皮青椒', desc: '微辣 · 按价格选份量', basePrice: 3, canCustomPrice: true, image: '/static/dishes/veg2.png' },
 	{ id: 'veg3', category: '素菜', name: '酸辣土豆', desc: '今日售罄', basePrice: 3, canCustomPrice: true, image: '/static/dishes/veg3.png' },
-	{ id: 'mix1', category: '荤素搭配', name: '茄子肉末', desc: '时令茄子 + 猪肉末 · 可加价', basePrice: 6, canCustomPrice: true, image: '/static/dishes/mix1.png' },
-	{ id: 'mix2', category: '荤素搭配', name: '青椒牛柳', desc: '固定价', basePrice: 6, canCustomPrice: false, image: '/static/dishes/mix2.png' },
-	{ id: 'mix3', category: '荤素搭配', name: '香菇滑鸡', desc: '固定价', basePrice: 6, canCustomPrice: false, image: '/static/dishes/mix3.png' },
-	{ id: 'meat1', category: '纯荤', name: '糖醋里脊', desc: '固定价，避免亏损', basePrice: 9, canCustomPrice: false, image: '/static/dishes/meat1.png' },
-	{ id: 'meat2', category: '纯荤', name: '红烧肉', desc: '固定价', basePrice: 9, canCustomPrice: false, image: '/static/dishes/meat2.png' }
+	{ id: 'mix1', category: '荤素搭配', name: '茄子肉末', desc: '时令茄子 + 猪肉末 · 按价格选份量', basePrice: 6, canCustomPrice: true, image: '/static/dishes/mix1.png' },
+	{ id: 'mix2', category: '荤素搭配', name: '青椒牛柳', desc: '牛柳足量 · 按价格选份量', basePrice: 6, canCustomPrice: true, image: '/static/dishes/mix2.png' },
+	{ id: 'mix3', category: '荤素搭配', name: '香菇滑鸡', desc: '滑鸡嫩滑 · 按价格选份量', basePrice: 6, canCustomPrice: true, image: '/static/dishes/mix3.png' },
+	{ id: 'meat1', category: '纯荤', name: '糖醋里脊', desc: '现炸现裹汁 · 按价格选份量', basePrice: 9, canCustomPrice: true, image: '/static/dishes/meat1.png' },
+	{ id: 'meat2', category: '纯荤', name: '红烧肉', desc: '慢炖入味 · 按价格选份量', basePrice: 9, canCustomPrice: true, image: '/static/dishes/meat2.png' }
 ];
 
 // 今日菜单为空时，从模板（is_template=true）复制播种今日菜单
