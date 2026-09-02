@@ -121,7 +121,7 @@
 <script setup lang="uts">
 	import { requestJson } from '../../common/http.uts'
 	import { cartHydrate, cartItems, cartMeal, cartCount, cartTotal, cartSetQty, cartClear, CartItem } from '../../common/cart.uts'
-	import { customer, sessionSilentLogin } from '../../common/session.uts'
+	import { customer, sessionRestore, requireLogin } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
 
 	// 下单请求行：服务端只收 id/qty/pay
@@ -159,6 +159,8 @@
 	function clearCart() { cartClear(); toast('饭盒已清空') }
 	// 列表 → 确认：本页不做可点单拦截（首页已拦），仅在收档后提示拦截；收餐信息缺项提供快捷输入
 	function goConfirm() {
+		// 结算要求已登录（对标主流小程序：浏览自由，下单需身份）
+		if (!requireLogin()) return
 		if (totalCount.value === 0) return
 		const c = cfgOf(cartMeal.value)
 		if (bjMinutes() >= c.closeMin) { toast('今日' + c.label + '配送已结束'); return }
@@ -234,7 +236,7 @@
 	}
 	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }
 
-	onLoad(() => { sessionSilentLogin(); cartHydrate() })
+	onLoad(() => { sessionRestore(); cartHydrate() })
 	onShow(() => { cartHydrate() })
 </script>
 

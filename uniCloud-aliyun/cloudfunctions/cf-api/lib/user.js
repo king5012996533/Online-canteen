@@ -57,7 +57,7 @@ async function userLogin(p) {
 	// 签发 token：32 位随机 hex
 	const token = crypto.randomBytes(16).toString('hex');
 	const now = Date.now();
-	const emptyProfile = { name: '', phone: '', location: '' };
+	const emptyProfile = { nickname: '', avatar_url: '', name: '', phone: '', location: '' };
 
 	const db = uniCloud.database();
 	const usersCol = db.collection('users');
@@ -111,16 +111,18 @@ async function userGetProfile(p) {
 	return ok({ profile: user.profile || { name: '', phone: '', location: '' } });
 }
 
-// action='saveProfile'：入参 {token, profile:{name,phone,location}}，name 必填非空
+// action='saveProfile'：入参 {token, profile:{nickname, avatar_url, name, phone, location}}，name 必填非空
 async function userSaveProfile(p) {
 	const token = typeof p.token === 'string' ? p.token.trim() : '';
 	if (!token) {
 		return fail(ERR_TOKEN);
 	}
 	const src = (p.profile && typeof p.profile === 'object' && !Array.isArray(p.profile)) ? p.profile : {};
-	const name = typeof src.name === 'string' ? src.name.trim() : '';
-	const phone = typeof src.phone === 'string' ? src.phone.trim() : '';
-	const location = typeof src.location === 'string' ? src.location.trim() : '';
+	const nickname = typeof src.nickname === 'string' ? src.nickname.trim().substring(0, 20) : '';
+	const avatarUrl = typeof src.avatar_url === 'string' ? src.avatar_url.trim().substring(0, 300) : '';
+	const name = typeof src.name === 'string' ? src.name.trim().substring(0, 20) : '';
+	const phone = typeof src.phone === 'string' ? src.phone.trim().substring(0, 20) : '';
+	const location = typeof src.location === 'string' ? src.location.trim().substring(0, 40) : '';
 	if (!name) {
 		return fail('请填写姓名');
 	}
@@ -129,9 +131,16 @@ async function userSaveProfile(p) {
 	if (!user) {
 		return fail(ERR_TOKEN);
 	}
-	// 整体覆盖 profile，保证 name/phone/location 一起更新
+	// 整体覆盖 profile，保证各字段一起更新；旧记录缺昵称/头像时补空串
+	const oldProfile = user.profile || {};
 	await db.collection('users').doc(user._id).update({
-		profile: { name: name, phone: phone, location: location }
+		profile: {
+			nickname: nickname || (typeof oldProfile.nickname === 'string' ? oldProfile.nickname : ''),
+			avatar_url: avatarUrl || (typeof oldProfile.avatar_url === 'string' ? oldProfile.avatar_url : ''),
+			name: name,
+			phone: phone,
+			location: location
+		}
 	});
 	return ok({});
 }

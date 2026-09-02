@@ -1,81 +1,137 @@
 /**
- * 登录会话与顾客信息：模块级单例，供 首页/饭盒/我的 共享。
- * 静默登录全流程不弹窗：有 token 先验 → 失效清掉重登一次 → 无 token 直接微信登录；
- * 失败只记日志（游客照常下单，订单 uid 为空）。
+ * 登录会话与顾客信息：跨 Tab 共享单例。
+ *
+ * 4.0 登录形态（对标主流小程序）：
+ *  - 老用户（本机有 token）启动自动恢复登录态，无感；
+ *  - 新用户浏览菜单不用登录，点「微信一键登录」按钮才建档（login()）；
+ *  - 下单结算要求已登录（box 页调 requireLogin() 引导到「我的」页）；
+ *  - 微信平台已取消强制授权弹窗：wx.login 本身静默，头像/昵称由用户在
+ *    「我的」页主动填写（昵称输入 + 头像上传），保存到云端档案。
  */
 
 import { requestJson } from './http.uts'
 
-export const customer = reactive({ name: '', location: '', phone: '' })
+export const loggedIn = ref(false)
+export const loginChecking = ref(false)
+export const loginErr = ref('')
+export const customer = reactive({ nickname: '', avatar_url: '', name: '', phone: '', location: '' })
 
-let loginDone = false
+let restored = false // 本会话是否已尝试恢复登录态
 
-function getWxCode(): Promise<string> {
-	return new Promise<string>((resolve) => {
-		uni.login({
-			provider: 'weixin',
-			success: (res) => { resolve(res.code ?? '') },
-			fail: (err) => { console.log('uni.login fail', err); resolve('') }
-		})
-	})
+function applyProfile(p: UTSJSONObject | null) {
+	if (p === null) return
+	customer.nickname = p.getString('nickname') ?? ''
+	customer.avatar_url = p.getString('avatar_url') ?? ''
+	customer.name = p.getString('name') ?? ''
+	customer.phone = p.getString('phone') ?? ''
+	customer.location = p.getString('location') ?? ''
+	// 昵称作为配送联系人默认名
+	if (customer.name === '' && customer.nickname !== '') { customer.name = customer.nickname }
 }
 
-// 从 data 里取资料（login / getProfile 两种响应都带 data.profile）
-function pickProfile(data: UTSJSONObject): UTSJSONObject | null {
-	const p = data.getJSON('profile')
-	if (p instanceof UTSJSONObject) return p
-	return null
-}
-
-// 完整登录流程，成功返回资料（可能为 null），失败返回 null
-export async function ensureLogin(): Promise<UTSJSONObject | null> {
-	try {
-		const t = uni.getStorageSync('xk_user_token')
-		if (t !== '' && t !== null) {
+// 启动恢复：本机有 token 视为已登录（老用户无感），并后台刷新资料；失败静默清态
+export function sessionRestore() {
+	if (restored) return
+	restored = true
+	const t = uni.getStorageSync('xk_user_token')
+	if (t === '' || t === null) return
+	loggedIn.value = true
+	; (async () => {
+		try {
 			const r = await requestJson('/cf-user', { action: 'getProfile' } as UTSJSONObject)
 			if (r !== null && r.getBoolean('ok') === true) {
 				const d = r.getJSON('data')
-				if (d instanceof UTSJSONObject) { return pickProfile(d) }
-				return null
-			}
-			if (r !== null && (r.getString('err') ?? '').indexOf('登录') !== -1) {
-				// token 失效：清掉后走一次重新登录
+				if (d instanceof UTSJSONObject) { applyProfile(d.getJSON('profile')) }
+			} else if (r !== null && (r.getString('err') ?? '').indexOf('登录') !== -1) {
+				// token 已失效：清掉，等用户点「一键登录」
 				uni.removeStorageSync('xk_user_token')
-			} else { return null }
-		}
-		const code = await getWxCode()
-		if (code === '') { console.log('ensureLogin: 未拿到微信 code'); return null }
-		const r2 = await requestJson('/cf-user', { action: 'login', code: code } as UTSJSONObject)
-		if (r2 !== null && r2.getBoolean('ok') === true) {
-			const d2 = r2.getJSON('data')
-			if (d2 instanceof UTSJSONObject) {
-				const token = d2.getString('token') ?? ''
-				if (token !== '') { uni.setStorageSync('xk_user_token', token) }
-				return pickProfile(d2)
+				loggedIn.value = false
 			}
-		}
-		console.log('ensureLogin: 登录失败', r2 !== null ? (r2.getString('err') ?? '') : '网络异常')
-		return null
-	} catch (e) { console.log('ensureLogin fail', e); return null }
+		} catch (e) { console.log('sessionRestore fail', e) }
+	})()
 }
 
-// 静默登录 + 回填常用信息（每个 Tab 页 onShow 都可调用；整个会话只真正登录一次）
-export async function sessionSilentLogin() {
-	if (loginDone) return
-	const profile = await ensureLogin()
-	if (profile === null) return
-	loginDone = true
-	const name = profile.getString('name') ?? ''
-	const location = profile.getString('location') ?? ''
-	const phone = profile.getString('phone') ?? ''
-	if (name !== '') customer.name = name
-	if (location !== '') customer.location = location
-	if (phone !== '') customer.phone = phone
+// 微信一键登录：wx.login 换 token 建档/恢复（微信侧本身不弹窗）
+export async function login(): Promise<boolean> {
+	if (loggedIn.value) return true
+	loginChecking.value = true
+	loginErr.value = ''
+	try {
+		const code = await new Promise<string>((resolve) => {
+			uni.login({
+				provider: 'weixin',
+				success: (res) => { resolve(res.code ?? '') },
+				fail: (err) => { console.log('uni.login fail', err); resolve('') }
+			})
+		})
+		if (code === '') { loginChecking.value = false; loginErr.value = '微信登录失败，请重试'; return false }
+		const r = await requestJson('/cf-user', { action: 'login', code: code } as UTSJSONObject)
+		if (r !== null && r.getBoolean('ok') === true) {
+			const d = r.getJSON('data')
+			if (d instanceof UTSJSONObject) {
+				const token = d.getString('token') ?? ''
+				if (token !== '') { uni.setStorageSync('xk_user_token', token) }
+				loggedIn.value = true
+				loginChecking.value = false
+				applyProfile(d.getJSON('profile'))
+				return true
+			}
+		}
+		loginErr.value = r !== null ? (r.getString('err') ?? '登录失败，请重试') : '网络异常，请检查网络'
+	} catch (e) {
+		loginErr.value = '登录失败，请重试'
+		console.log('login fail', e)
+	}
+	loginChecking.value = false
+	return false
+}
+
+// 需要身份的入口统一走这里：未登录则提示并引导到「我的」页
+export function requireLogin(): boolean {
+	if (loggedIn.value) return true
+	uni.showToast({ title: '请先登录', icon: 'none' })
+	uni.switchTab({ url: '/pages/profile/profile' })
+	return false
+}
+
+// 退出登录：清掉本地 token 与登录态；下次进入点「一键登录」即可恢复
+export function logout() {
+	uni.removeStorageSync('xk_user_token')
+	loggedIn.value = false
+	loginErr.value = ''
+	customer.nickname = ''
+	customer.avatar_url = ''
+	customer.name = ''
+	customer.phone = ''
+	customer.location = ''
+}
+
+// 保存资料（昵称/头像/配送联系），任一页面调用；空串字段保留原值（局部更新不覆盖）。
+// 返回是否成功
+export async function saveProfileFields(nickname: string, avatarUrl: string, name: string, phone: string, location: string): Promise<boolean> {
+	const r = await requestJson('/cf-user', {
+		action: 'saveProfile',
+		profile: { nickname: nickname, avatar_url: avatarUrl, name: name, phone: phone, location: location }
+	} as UTSJSONObject)
+	if (r !== null && r.getBoolean('ok') === true) {
+		if (nickname !== '' || name !== '') {
+			customer.name = name !== '' ? name : (nickname !== '' ? nickname : customer.name)
+		}
+		if (nickname !== '') { customer.nickname = nickname }
+		if (avatarUrl !== '') { customer.avatar_url = avatarUrl }
+		if (phone !== '') { customer.phone = phone }
+		if (location !== '') { customer.location = location }
+		return true
+	}
+	return false
 }
 
 // 把顾客信息（含首页改的配送地点）保存到云端档案；静默失败——未登录/网络差时本次会话内仍然生效
 export async function sessionSaveProfile(): Promise<void> {
 	try {
-		await requestJson('/cf-user', { action: 'saveProfile', profile: { name: customer.name, phone: customer.phone, location: customer.location } } as UTSJSONObject)
+		await requestJson('/cf-user', {
+			action: 'saveProfile',
+			profile: { nickname: customer.nickname, avatar_url: customer.avatar_url, name: customer.name, phone: customer.phone, location: customer.location }
+		} as UTSJSONObject)
 	} catch (e) { console.log('sessionSaveProfile fail', e) }
 }

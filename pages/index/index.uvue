@@ -89,7 +89,7 @@
 	import { requestJson } from '../../common/http.uts'
 	import { cfgOf } from '../../common/meals.uts'
 	import { cartHydrate, cartItems, cartMeal, cartAdd, cartCount, cartSetMeal, cartSyncBadge } from '../../common/cart.uts'
-	import { customer, sessionSilentLogin, sessionSaveProfile } from '../../common/session.uts'
+	import { customer, sessionRestore, sessionSaveProfile } from '../../common/session.uts'
 
 	type Dish = { id: string; category: string; name: string; desc: string; price: number; pay: number; qty: number; custom: boolean; sold: boolean; image: string }
 
@@ -252,7 +252,7 @@
 		firstShow = false
 	})
 	// 首次进入时静默登录并回填常用信息（失败不打扰点单，仅记日志）
-	onLoad(() => { sessionSilentLogin() })
+	onLoad(() => { sessionRestore() })
 	tick()
 	const tickTimer = setInterval(tick, 1000)
 	// 页面销毁时清理计时器，避免叠加多个定时器

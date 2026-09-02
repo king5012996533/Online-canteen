@@ -1,18 +1,47 @@
 <template>
 	<view class="page">
-		<!-- 用户卡：头像 + 名称 + 配送地点 -->
+		<!-- 用户卡 -->
 		<view class="card user-card">
-			<view class="avatar"><text class="avatar-char">微</text></view>
-			<view class="user-main">
-				<text class="user-name">{{userDisplayName}}</text>
-				<text class="user-sub">{{userSubLine}}</text>
-				<text v-if="!loginOk && !loginChecking && loginErr !== ''" class="login-err">{{loginErr}}</text>
+			<view class="avatar-wrap">
+				<image v-if="customer.avatar_url !== ''" class="avatar-img" :src="customer.avatar_url" mode="aspectFill"></image>
+				<text v-else class="avatar-letter">{{avatarLetter}}</text>
 			</view>
-			<button v-if="!loginOk && !loginChecking" class="g-btn-ghost relogin" @click="manualLogin">重新登录</button>
+			<view class="user-main">
+				<text class="user-name">{{displayName}}</text>
+				<text class="user-sub">{{subLine}}</text>
+				<text v-if="loginErr !== ''" class="login-err">{{loginErr}}</text>
+			</view>
 		</view>
 
-		<!-- 菜单卡：图标行 -->
-		<view class="card menu-card">
+		<!-- 一键登录（未登录时） -->
+		<button v-if="!loggedIn" class="g-btn-primary login-btn" :disabled="loginChecking" @click="doLogin">{{loginChecking ? '登录中…' : '微信一键登录'}}</button>
+		<view v-if="!loggedIn" class="login-tip"><text class="g-sub">登录后可下单、同步常用信息。一键登录由微信静默完成，不会打扰你。</text></view>
+
+		<!-- 完善资料（已登录且未设昵称） -->
+		<view v-if="loggedIn && customer.nickname === ''" class="card edit-card">
+			<text class="g-cap edit-cap">完善资料</text>
+			<view class="g-hairline edit-line"></view>
+			<view class="form-field"><view class="form-label-row"><text class="g-label">昵称</text><text class="g-req">*</text></view><input class="g-field-input" v-model="nicknameInput" placeholder="给自己起个名字" placeholder-class="g-ph" maxlength="20" /></view>
+			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveNickname">{{saving ? '保存中…' : '保存'}}</button>
+		</view>
+
+		<!-- 头像昵称卡（已设昵称后可随时改） -->
+		<view v-if="loggedIn && customer.nickname !== ''" class="card edit-card">
+			<text class="g-cap edit-cap">头像与昵称</text>
+			<view class="g-hairline edit-line"></view>
+			<view class="avatar-edit-row">
+				<view class="avatar-wrap">
+					<image v-if="customer.avatar_url !== ''" class="avatar-img" :src="customer.avatar_url" mode="aspectFill"></image>
+					<text v-else class="avatar-letter big">{{avatarLetter}}</text>
+				</view>
+				<button class="avatar-pick" @click="pickAvatar">更换头像</button>
+			</view>
+			<view class="form-field"><view class="form-label-row"><text class="g-label">昵称</text></view><input class="g-field-input" v-model="nicknameInput" placeholder-class="g-ph" maxlength="20" /></view>
+			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveProfileInfo">{{saving ? '保存中…' : '保存'}}</button>
+		</view>
+
+		<!-- 菜单卡（需登录：订单/地址/电话都跟账号走） -->
+		<view v-if="loggedIn" class="card menu-card">
 			<view class="menu-row" @click="goOrders">
 				<image class="row-ic" src="/static/tab/orders.png" mode="aspectFit"></image>
 				<text class="row-text">我的订单</text>
@@ -30,6 +59,20 @@
 				<text class="row-val">{{form.phone || '未填写'}}</text>
 				<text class="row-arr">›</text>
 			</view>
+		</view>
+
+		<!-- 编辑卡（点地址/电话行展开） -->
+		<view v-if="editing" class="card edit-card">
+			<text class="g-cap edit-cap">常用信息 · 配送与联系</text>
+			<view class="g-hairline edit-line"></view>
+			<view class="form-field"><view class="form-label-row"><text class="g-label">配送联系人</text><text class="g-req">*</text></view><input class="g-field-input" v-model="form.name" placeholder="如：张三 / 3 楼财务" placeholder-class="g-ph" maxlength="20" /></view>
+			<view class="form-field"><view class="form-label-row"><text class="g-label">联系电话（选填）</text></view><input class="g-field-input" v-model="form.phone" type="number" placeholder="138 0000 0000" placeholder-class="g-ph" maxlength="11" /></view>
+			<view class="form-field"><view class="form-label-row"><text class="g-label">常用配送地点（选填）</text></view><input class="g-field-input" v-model="form.location" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" maxlength="40" /></view>
+			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveContact">{{saving ? '保存中…' : '保存'}}</button>
+		</view>
+
+		<!-- 关于我们 -->
+		<view class="card menu-card">
 			<button class="menu-row contact-row" open-type="contact">
 				<image class="row-ic" src="/static/icons/chat.png" mode="aspectFit"></image>
 				<text class="row-text">意见反馈</text>
@@ -42,18 +85,8 @@
 			</view>
 		</view>
 
-		<!-- 编辑卡：点地址/电话行展开 -->
-		<view v-if="editing" class="card edit-card">
-			<text class="g-cap edit-cap">常用信息 · 配送与联系</text>
-			<view class="g-hairline edit-line"></view>
-			<view class="form-field"><view class="form-label-row"><text class="g-label">姓名</text><text class="g-req">*</text></view><input class="g-field-input" v-model="form.name" placeholder="如：张三 / 3 楼财务" placeholder-class="g-ph" /></view>
-			<view class="form-field"><view class="form-label-row"><text class="g-label">联系电话（选填）</text></view><input class="g-field-input" v-model="form.phone" type="number" placeholder="138 0000 0000" placeholder-class="g-ph" /></view>
-			<view class="form-field"><view class="form-label-row"><text class="g-label">常用配送地点（选填）</text></view><input class="g-field-input" v-model="form.location" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" /></view>
-			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveProfile">{{saving ? '保存中…' : '保存'}}</button>
-		</view>
-
 		<!-- 退出登录 -->
-		<view class="card out-card" @click="logout"><text class="out-text">退出登录</text></view>
+		<view v-if="loggedIn" class="card out-card" @click="logoutBtn"><text class="out-text">退出登录</text></view>
 
 		<!-- 关于我们 -->
 		<view v-if="aboutSheet" class="sheet-mask"><view class="sheet">
@@ -71,173 +104,114 @@
 </template>
 
 <script setup lang="uts">
-	import { requestJson } from '../../common/http.uts'
-	import { customer } from '../../common/session.uts'
+	import { customer, loggedIn, loginChecking, loginErr, sessionRestore, login, logout, saveProfileFields } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
 
-	// 登录态：loginOk 已登录 / loginChecking 登录中 / 失败时 loginErr 给出原因
-	const loginOk = ref(false)
-	const loginChecking = ref(true)
-	const loginErr = ref('')
-	const form = reactive({name: '', phone: '', location: ''})
-	const saving = ref(false)
 	const toastMessage = ref('')
-	// 编辑态：点「配送地址/联系电话」行展开常用信息编辑卡
+	const nicknameInput = ref('')
 	const editing = ref(false)
 	const aboutSheet = ref(false)
+	const saving = ref(false)
+	const form = reactive({ name: '', phone: '', location: '' })
 
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
-	// 用户卡文案
-	const userDisplayName = computed((): string => {
-		if (loginChecking.value) return '正在登录…'
-		if (!loginOk.value) return '未登录'
-		const name = customerName()
-		return name === '' ? '微信用户' : name
-	})
-	const userSubLine = computed((): string => {
-		if (!loginOk.value) return '富记线上饭堂 · 写字楼现炒午餐'
-		const loc = customerLocation()
-		return loc === '' ? 'XX大厦 / 公司前台' : loc
-	})
-	function customerName(): string { return customer.name }
-	function customerLocation(): string { return customer.location }
 
-	function toggleEdit() { editing.value = !editing.value }
-	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }
-	function aboutTip() { aboutSheet.value = true }
-	// 退出登录：清掉本地 token 与登录态；下次进入会自动重新静默登录
-	function logout() {
-		uni.removeStorageSync('xk_user_token')
-		loginOk.value = false
-		loginChecking.value = false
-		loginErr.value = ''
-		toast('已退出，下次进入将自动重新登录')
+	const displayName = computed((): string => {
+		if (!loggedIn.value) return '未登录'
+		if (customer.nickname !== '') return customer.nickname
+		if (customer.name !== '') return customer.name
+		return '微信用户'
+	})
+	const subLine = computed((): string => {
+		if (!loggedIn.value) return '登录后可下单并同步常用信息'
+		return customer.location !== '' ? customer.location : 'XX大厦 / 公司前台'
+	})
+	const avatarLetter = computed((): string => {
+		const src = customer.nickname !== '' ? customer.nickname : (customer.name !== '' ? customer.name : '微')
+		return src.charAt(0)
+	})
+
+	// 微信一键登录
+	async function doLogin() {
+		if (loginChecking.value) return
+		const ok = await login()
+		if (ok) { toast('登录成功') }
 	}
 
-	// uni.login 回调转 Promise：拿微信登录 code（拿不到返回空串）
-	function getWxCode(): Promise<string> {
-		return new Promise<string>((resolve) => {
-			uni.login({
-				provider: 'weixin',
-				success: (res) => { resolve(res.code ?? '') },
-				fail: (err) => { console.log('uni.login fail', err); resolve('') }
-			})
+	// 保存昵称（首次完善资料）
+	async function saveNickname() {
+		if (saving.value) return
+		const nick = nicknameInput.value.trim()
+		if (nick === '') { toast('请填写昵称'); return }
+		saving.value = true
+		const ok = await saveProfileFields(nick, customer.avatar_url, customer.name, customer.phone, customer.location)
+		saving.value = false
+		toast(ok ? '已保存' : '保存失败，请重试')
+	}
+	// 保存头像+昵称
+	async function saveProfileInfo() {
+		if (saving.value) return
+		const nick = nicknameInput.value.trim()
+		if (nick === '') { toast('请填写昵称'); return }
+		saving.value = true
+		const ok = await saveProfileFields(nick, customer.avatar_url, customer.name, customer.phone, customer.location)
+		saving.value = false
+		toast(ok ? '已保存' : '保存失败，请重试')
+	}
+	// 更换头像：相册选图 → 上传云存储 → 保存档案
+	async function pickAvatar() {
+		uni.chooseImage({
+			count: 1,
+			success: (res) => {
+				const path = res.tempFilePaths.length > 0 ? res.tempFilePaths[0] : ''
+				if (path === '') return
+				uniCloud.uploadFile({
+					filePath: path,
+					cloudPath: 'avatars/' + Date.now().toString(36) + '.jpg',
+					success: async (up) => {
+						try {
+							const tf = await uniCloud.getTempFileURL({ fileList: [up.fileID] })
+							let url = ''
+							if (tf.fileList.length > 0) { url = tf.fileList[0].tempFileURL }
+							if (url === '') { toast('头像上传失败，请重试'); return }
+							customer.avatar_url = url
+							const ok = await saveProfileFields(customer.nickname, url, customer.name, customer.phone, customer.location)
+							toast(ok ? '头像已更新' : '头像已上传，档案保存失败')
+						} catch (e) { console.log('avatar tempUrl fail', e); toast('头像地址获取失败') }
+					},
+					fail: () => { toast('头像上传失败，请重试') }
+				})
+			}
 		})
 	}
-	// 从 data 里取资料（login / getProfile 两种响应都带 data.profile）
-	function pickProfile(data: UTSJSONObject): UTSJSONObject | null {
-		const p = data.getJSON('profile')
-		if (p instanceof UTSJSONObject) return p
-		return null
+	// 保存配送联系信息
+	async function saveContact() {
+		if (saving.value) return
+		if (form.name.trim() === '') { toast('请填写配送联系人'); return }
+		saving.value = true
+		const ok = await saveProfileFields(customer.nickname, customer.avatar_url, form.name.trim(), form.phone.trim(), form.location.trim())
+		saving.value = false
+		toast(ok ? '已保存' : '保存失败，请重试')
 	}
-	// 静默登录全流程：有 token 先验（getProfile）→ 失效清掉重登一次；无 token 直接微信登录。
-	// 整个流程静默不弹窗，失败只把登录态卡标成未登录。成功返回资料（可能为 null）
-	async function ensureLogin(): Promise<UTSJSONObject | null> {
-		if (!loginOk.value) { loginChecking.value = true }
-		loginErr.value = ''
-		try {
-			const t = uni.getStorageSync('xk_user_token')
-			if (t !== '' && t !== null) {
-				const r = await requestJson('/cf-user', { action: 'getProfile' } as UTSJSONObject)
-				if (r !== null && r.getBoolean('ok') === true) {
-					const d = r.getJSON('data')
-					if (d instanceof UTSJSONObject) {
-						loginOk.value = true
-						loginChecking.value = false
-						return pickProfile(d)
-					}
-					loginChecking.value = false
-					return null
-				}
-				if (r !== null && (r.getString('err') ?? '').indexOf('登录') !== -1) {
-					// token 失效：清掉后走一次重新登录
-					uni.removeStorageSync('xk_user_token')
-				} else {
-					loginChecking.value = false
-					loginErr.value = r !== null ? (r.getString('err') ?? '登录失败') : '网络异常，请检查网络'
-					return null
-				}
-			}
-			// 无 token / token 刚失效：微信静默登录换新 token
-			const code = await getWxCode()
-			if (code === '') { loginChecking.value = false; loginErr.value = '微信登录失败，请重试'; return null }
-			const r2 = await requestJson('/cf-user', { action: 'login', code: code } as UTSJSONObject)
-			if (r2 !== null && r2.getBoolean('ok') === true) {
-				const d2 = r2.getJSON('data')
-				if (d2 instanceof UTSJSONObject) {
-					const token = d2.getString('token') ?? ''
-					if (token !== '') { uni.setStorageSync('xk_user_token', token) }
-					loginOk.value = true
-					loginChecking.value = false
-					return pickProfile(d2)
-				}
-			}
-			loginChecking.value = false
-			loginErr.value = r2 !== null ? (r2.getString('err') ?? '登录失败，请重试') : '网络异常，请检查网络'
-			console.log('ensureLogin fail', loginErr.value)
-			return null
-		} catch (e) {
-			console.log('ensureLogin fail', e)
-			loginChecking.value = false
-			loginErr.value = '登录失败，请重试'
-			return null
+	function toggleEdit() {
+		editing.value = !editing.value
+		if (editing.value) {
+			form.name = customer.name
+			form.phone = customer.phone
+			form.location = customer.location
 		}
 	}
-	// 把服务端资料回填到输入框（进入页面/下拉刷新时以服务端为准）
-	function applyProfile(p: UTSJSONObject | null) {
-		if (p === null) return
-		form.name = p.getString('name') ?? ''
-		form.phone = p.getString('phone') ?? ''
-		form.location = p.getString('location') ?? ''
+	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }
+	function aboutTip() { aboutSheet.value = true }
+	// 退出登录：清掉本地 token 与登录态；下次进入点「一键登录」即可恢复
+	function logoutBtn() {
+		logout()
+		editing.value = false
+		toast('已退出，下次进入点「一键登录」即可')
 	}
-	// 单次保存请求：成功返回空串，失败返回给用户看的提示文案
-	async function saveOnce(): Promise<string> {
-		const r = await requestJson('/cf-user', { action: 'saveProfile', profile: { name: form.name, phone: form.phone, location: form.location } } as UTSJSONObject)
-		if (r === null) return '网络异常，请重试'
-		if (r.getBoolean('ok') === true) return ''
-		return r.getString('err') ?? '保存失败，请重试'
-	}
-	// 保存常用信息：姓名必填；token 失效时清 storage 静默重登一次再重试
-	async function saveProfile() {
-		if (saving.value) return
-		if (form.name.trim() === '') { toast('请填写姓名'); return }
-		saving.value = true
-		let err = ''
-		try {
-			err = await saveOnce()
-			if (err.indexOf('登录') !== -1) {
-				uni.removeStorageSync('xk_user_token')
-				await ensureLogin()
-				err = await saveOnce()
-			}
-		} catch (e) { console.log('saveProfile fail', e); err = '网络异常，请重试' }
-		saving.value = false
-		if (err === '') { toast('已保存') } else { toast(err) }
-	}
-	// 「重新登录」按钮：完整重走一遍登录，成功后回填资料
-	async function manualLogin() {
-		const p = await ensureLogin()
-		applyProfile(p)
-	}
-	// 首次进入：静默登录 → 回填资料
-	async function fullInit() {
-		const p = await ensureLogin()
-		applyProfile(p)
-	}
-	let inited = false
-	// 每次页面显示（含切回本 Tab）都做一次；首次进入才做登录 + 资料回填
-	onShow(() => {
-		if (!inited) { inited = true; fullInit() }
-	})
-	// 下拉刷新：重新校验登录态，资料拉最新
-	async function refreshAll() {
-		try {
-			const p = await ensureLogin()
-			applyProfile(p)
-		} catch (e) { console.log('refreshAll fail', e) }
-		uni.stopPullDownRefresh()
-	}
-	onPullDownRefresh(() => { refreshAll() })
+
+	onLoad(() => { sessionRestore() })
+	onPullDownRefresh(() => { uni.stopPullDownRefresh() })
 </script>
 
 <style>
@@ -245,21 +219,17 @@
 	.card { background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E7E3D6; }
 	/* ---------- 用户卡 ---------- */
 	.user-card { display: flex; flex-direction: row; align-items: center; padding: 16px 14px; margin-top: 8px; }
-	.avatar { width: 52px; height: 52px; border-radius: 26px; background-color: #E9F1E7; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-	.avatar-char { color: #2F6B3F; font-size: 20px; font-weight: 900; }
+	.avatar-wrap { width: 52px; height: 52px; border-radius: 26px; background-color: #E9F1E7; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+	.avatar-img { width: 52px; height: 52px; }
+	.avatar-letter { color: #2F6B3F; font-size: 20px; font-weight: 900; }
+	.avatar-letter.big { font-size: 30px; }
 	.user-main { flex: 1; min-width: 0; margin-left: 12px; }
 	.user-name { display: block; font-size: 17px; font-weight: 900; color: #22301F; }
 	.user-sub { display: block; font-size: 11.5px; color: #8C9689; margin-top: 4px; }
 	.login-err { display: block; color: #C8862A; font-size: 11px; margin-top: 4px; }
-	.relogin { width: 96px; height: 38px; font-size: 12.5px; margin-left: 12px; flex-shrink: 0; }
-	/* ---------- 菜单卡 ---------- */
-	.menu-card { margin-top: 14px; padding: 2px 14px; }
-	.menu-row { display: flex; flex-direction: row; align-items: center; padding: 13px 0; border-bottom: 1px solid #E7E3D6; }
-	.menu-row:last-child { border-bottom: 0; }
-	.row-ic { width: 20px; height: 20px; margin-right: 11px; flex-shrink: 0; }
-	.row-text { font-size: 13.5px; font-weight: 600; color: #22301F; }
-	.row-val { margin-left: auto; font-size: 11.5px; color: #8C9689; font-weight: 600; }
-	.row-arr { margin-left: 8px; color: #C4CCBF; font-size: 15px; }
+	/* ---------- 一键登录 ---------- */
+	.login-btn { width: 100%; margin-top: 16px; }
+	.login-tip { margin-top: 10px; text-align: center; line-height: 1.6; padding: 0 10px; }
 	/* ---------- 编辑卡 ---------- */
 	.edit-card { margin-top: 14px; padding: 14px; }
 	.edit-cap { display: block; margin-bottom: 4px; }
@@ -267,10 +237,17 @@
 	.form-field { margin-top: 12px; }
 	.form-label-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
 	.save-btn { width: 100%; border: 0; margin-top: 16px; }
-	/* ---------- 菜单行（意见反馈为微信客服会话按钮） ---------- */
+	.avatar-edit-row { display: flex; flex-direction: row; align-items: center; margin-top: 4px; }
+	.avatar-pick { margin-left: 12px; background-color: #F3F7F1; border: 0; border-radius: 999px; padding: 7px 14px; font-size: 12px; font-weight: 700; color: #22301F; }
+	/* ---------- 菜单卡 ---------- */
+	.menu-card { margin-top: 14px; padding: 2px 14px; }
+	.menu-row { display: flex; flex-direction: row; align-items: center; padding: 13px 0; border-bottom: 1px solid #E7E3D6; }
+	.row-ic { width: 20px; height: 20px; margin-right: 11px; flex-shrink: 0; }
+	.row-text { font-size: 13.5px; font-weight: 600; color: #22301F; }
+	.row-val { margin-left: auto; font-size: 11.5px; color: #8C9689; font-weight: 600; }
+	.row-arr { margin-left: 8px; color: #C4CCBF; font-size: 15px; }
+	/* 意见反馈：微信客服会话按钮 */
 	.contact-row { background-color: #FFFFFF; border: 0; margin: 0; width: 100%; border-radius: 0; }
-	.menu-row:last-child { border-bottom: 0; }
-	.contact-row:last-child { border-bottom: 0; }
 	/* ---------- 关于我们 ---------- */
 	.sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background-color: rgba(20,20,24,0.32); display: flex; align-items: flex-end; }
 	.sheet { background-color: #FFFFFF; width: 100%; padding: 20px; border-radius: 22px 22px 0 0; }

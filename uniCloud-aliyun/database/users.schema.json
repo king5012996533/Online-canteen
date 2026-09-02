@@ -19,7 +19,11 @@
     },
     "profile": {
       "bsonType": "object",
-      "description": "用户资料 {name, phone, location}"
+      "description": "用户资料 {nickname, avatar_url, name, phone, location}"
+    },
+    "token_expires_at": {
+      "bsonType": "number",
+      "description": "token 过期时间 epoch 毫秒（30 天），过期按登录已失效处理"
     },
     "created_at": {
       "bsonType": "number",

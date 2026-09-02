@@ -56,7 +56,7 @@
 
 <script setup lang="uts">
 	import { requestJson } from '../../common/http.uts'
-	import { sessionSilentLogin, ensureLogin } from '../../common/session.uts'
+	import { sessionRestore, login } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
 	import { orderStatusText, orderStatusClass } from '../../common/status.uts'
 
@@ -169,7 +169,7 @@
 		let r = await requestJson('/cf-user', { action: 'myOrders' } as UTSJSONObject)
 		if (r !== null && r.getBoolean('ok') === false && (r.getString('err') ?? '').indexOf('登录') !== -1) {
 			uni.removeStorageSync('xk_user_token')
-			await ensureLogin()
+			await login()
 			r = await requestJson('/cf-user', { action: 'myOrders' } as UTSJSONObject)
 		}
 		if (r !== null && r.getBoolean('ok') === true) {
@@ -183,8 +183,8 @@
 	function backList() { screen.value = 'list'; current.value = null }
 	async function refresh() { await loadOrders(); uni.stopPullDownRefresh() }
 
-	onLoad(() => { sessionSilentLogin() })
-	onShow(() => { sessionSilentLogin(); loadOrders() })
+	onLoad(() => { sessionRestore() })
+	onShow(() => { sessionRestore(); loadOrders() })
 	onPullDownRefresh(() => { refresh() })
 </script>
 
