@@ -3,7 +3,7 @@
 		<!-- ===== 绿色头部：定位 + 今天吃什么 + 餐次选择 + 配送条件 ===== -->
 		<view class="hero-green">
 			<view class="navbar">
-				<view class="loc-chip" @click="goProfile"><text class="loc-pin">📍</text><text class="loc-text">{{locLabel}}</text><text class="loc-arr">▾</text></view>
+				<view class="loc-chip" @click="openLocSheet"><text class="loc-pin">📍</text><text class="loc-text">{{locLabel}}</text><text class="loc-arr">▾</text></view>
 			</view>
 			<text class="home-h1">今天吃什么？</text>
 			<text class="home-sub">今日菜单</text>
@@ -27,17 +27,10 @@
 					<image class="dish-thumb" :src="dish.image" mode="aspectFill"></image>
 					<view class="dish-info">
 						<text class="dish-name">{{dish.name}}</text>
-						<text v-if="dish.custom" class="dish-min">最低价 ¥{{dish.price}}</text>
-						<text v-else class="dish-min">¥{{dish.price}}</text>
+						<view class="dish-price-line"><text class="dish-price">¥{{dish.price}}</text><text v-if="dish.custom" class="dish-qi"> 起</text></view>
 					</view>
 					<view v-if="dish.sold" class="sold-chip"><text class="sold-text">已售罄</text></view>
-					<view v-else-if="dish.custom" class="btn-custom" @click="openDish(dish)"><text class="btn-custom-text">自定义价格</text></view>
-					<view v-else-if="qtyOf(dish.id) === 0" class="add-btn" @click="quickAdd(dish)"><text class="add-plus">＋</text></view>
-					<view v-else class="stepper">
-						<view class="step-b minus" @click="cartSetQty(dish.id, qtyOf(dish.id) - 1)"><text class="step-char">−</text></view>
-						<text class="step-n">{{qtyOf(dish.id)}}</text>
-						<view class="step-b" @click="cartSetQty(dish.id, qtyOf(dish.id) + 1)"><text class="step-char">＋</text></view>
-					</view>
+					<view v-else class="add-btn" @click="openDish(dish)"><text class="add-plus">＋</text></view>
 				</view>
 			</view>
 			<view class="admin-entry" @click="goAdmin"><text class="g-sub">厨房端 ›</text></view>
@@ -57,7 +50,7 @@
 				<text class="detail-title">{{selDish?.name}}</text>
 				<text class="detail-min">最低售价 <text class="detail-min-green">¥{{selDish?.price}}</text></text>
 				<text class="detail-desc">{{selDish?.desc}}</text>
-				<view class="price-panel">
+				<view class="price-panel" v-if="isCustomDish">
 					<text class="pt">每道菜都有最低售价</text>
 					<text class="pd">你可以根据自己的食量自由调整价格，吃多少付多少。</text>
 					<view class="tiers">
@@ -66,26 +59,41 @@
 						<view class="tier" :class="{'sel': sliderVal === tier3}"><text class="tv">¥{{tier3}}</text><text class="tl">更足</text></view>
 					</view>
 				</view>
-				<view class="slider-block">
+				<view class="price-panel" v-else>
+					<view class="fixed-row"><text class="pt">单价</text><text class="fixed-price">¥{{selDish?.price}}</text></view>
+					<view class="fixed-qty-row"><text class="pd">数量</text>
+						<view class="stepper"><view class="step-b minus" @click="decDetailQty"><text class="step-char">−</text></view><text class="step-n">{{detailQty}}</text><view class="step-b" @click="incDetailQty"><text class="step-char">＋</text></view></view>
+					</view>
+				</view>
+				<view class="slider-block" v-if="isCustomDish">
 					<text class="slider-title">选择您愿意支付的金额</text>
 					<slider class="the-slider" :min="sliderMin" :max="sliderMax" :step="1" :value="sliderVal" activeColor="#2F6B3F" backgroundColor="#E7E3D6" block-size="22" block-color="#2F6B3F" @change="onSlider"></slider>
 					<view class="slider-ticks"><text class="tick" :class="{'on': sliderVal === tier1}">¥{{tier1}}</text><text class="tick" :class="{'on': sliderVal === tier2}">¥{{tier2}}</text><text class="tick" :class="{'on': sliderVal === tier3}">¥{{tier3}}</text><text class="tick">¥{{sliderMax}}+</text></view>
 				</view>
-				<view class="choice">
+				<view class="choice" v-if="isCustomDish">
 					<view class="cl"><text class="cl-l">你选择：</text><text class="cl-v">¥{{sliderVal}}</text></view>
 					<text class="cr">预计份量：{{portionLabel}}</text>
 				</view>
 			</view>
-			<view class="cta" @click="addCustom"><text class="cta-text">加入饭盒</text></view>
+			<view class="cta" @click="addFromDetail"><text class="cta-text">加入饭盒</text></view>
 		</view>
+
+		<!-- 配送地点选择弹层 -->
+		<view v-if="locSheet" class="sheet-mask"><view class="sheet">
+			<text class="sheet-title">配送地点</text>
+			<text class="g-sub">餐做好后送到这个位置，下单时自动使用</text>
+			<input class="g-field-input price-input" v-model="locInput" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" />
+			<button class="g-btn-primary cta" @click="saveLocSheet">保存</button>
+			<button class="g-btn-ghost cta" @click="locSheet = false">取消</button>
+		</view></view>
 	</view>
 </template>
 
 <script setup lang="uts">
 	import { requestJson } from '../../common/http.uts'
 	import { cfgOf } from '../../common/meals.uts'
-	import { cartHydrate, cartItems, cartMeal, cartAdd, cartSetQty, cartCount, cartSetMeal, cartSyncBadge } from '../../common/cart.uts'
-	import { customer, sessionSilentLogin } from '../../common/session.uts'
+	import { cartHydrate, cartItems, cartMeal, cartAdd, cartCount, cartSetMeal, cartSyncBadge } from '../../common/cart.uts'
+	import { customer, sessionSilentLogin, sessionSaveProfile } from '../../common/session.uts'
 
 	type Dish = { id: string; category: string; name: string; desc: string; price: number; pay: number; qty: number; custom: boolean; sold: boolean; image: string }
 
@@ -103,6 +111,9 @@
 	const sliderMin = ref(9)
 	const sliderMax = ref(25)
 	const sliderVal = ref(12)
+	const detailQty = ref(1)
+	const locSheet = ref(false)
+	const locInput = ref('')
 
 	// 餐次状态：open 可点单 / cooking 制作中 / ready 可取餐 / closed 已收档
 	const mealState = reactive({ lunch: 'open', dinner: 'open' })
@@ -124,12 +135,9 @@
 	const tier1 = computed((): number => { return selDish.value !== null ? selDish.value.price : 0 })
 	const tier2 = computed((): number => { return selDish.value !== null ? Math.round(selDish.value.price * 1.34) : 0 })
 	const tier3 = computed((): number => { return selDish.value !== null ? Math.round(selDish.value.price * 1.67) : 0 })
+	const isCustomDish = computed((): boolean => { return selDish.value !== null && selDish.value.custom })
 
 	function dishesByCategory(category: string): Dish[] { return dishes.value.filter((dish) => dish.category === category) }
-	function qtyOf(id: string): number {
-		const it = cartItems.value.find((x) => x.id === id)
-		return it !== null ? it.qty : 0
-	}
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
 	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
 
@@ -199,30 +207,47 @@
 		if (!silent) loading.value = false
 	}
 	function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
-	function goProfile() { uni.switchTab({ url: '/pages/profile/profile' }) }
+	// 定位胶囊：弹出配送地点选择/输入（与个人中心无关）
+	function openLocSheet() { locInput.value = customer.location; locSheet.value = true }
+	function saveLocSheet() {
+		const v = locInput.value.trim()
+		if (v === '') { toast('请输入配送地点'); return }
+		customer.location = v
+		locSheet.value = false
+		toast('配送地点已更新')
+		sessionSaveProfile()
+	}
 	// 固定价菜：快速 +1 入饭盒
 	function quickAdd(dish: Dish) {
 		if (!isMealOpen(cartMeal.value)) { toast(cfgOf(cartMeal.value).label + '已截单，请改点另一餐'); return }
 		cartAdd({ id: dish.id, name: dish.name, image: dish.image, pay: dish.price, qty: 1, spec: '标准' })
 		toast('已加入饭盒')
 	}
-	// 自定义价菜：进入详情页选价格
+	// 统一加购入口：进入菜品详情，自定义价菜走定价滑杆，固定价菜选数量
 	function openDish(dish: Dish) {
 		if (!isMealOpen(cartMeal.value)) { toast(cfgOf(cartMeal.value).label + '已截单，请改点另一餐'); return }
 		selDish.value = dish
 		sliderMin.value = dish.price
 		sliderMax.value = Math.round(dish.price * 2.5)
 		sliderVal.value = Math.round(dish.price * 1.34)
+		detailQty.value = 1
 		screen.value = 'dish'
 	}
 	function onSlider(e: SliderChangeEvent) { sliderVal.value = Math.floor(e.detail.value) }
-	function addCustom() {
+	function incDetailQty() { detailQty.value += 1 }
+	function decDetailQty() { if (detailQty.value > 1) { detailQty.value -= 1 } }
+	// 加入饭盒：自定义价菜按滑杆价 1 份；固定价菜按所选数量
+	function addFromDetail() {
 		const dish = selDish.value
 		if (dish === null) return
 		if (!isMealOpen(cartMeal.value)) { toast(cfgOf(cartMeal.value).label + '已截单，请改点另一餐'); return }
-		if (sliderVal.value < dish.price) { toast('价格不能低于最低售价'); return }
-		const spec = sliderVal.value <= tier1.value ? '标准' : (sliderVal.value <= tier2.value ? '加量' : '更足')
-		cartAdd({ id: dish.id, name: dish.name, image: dish.image, pay: sliderVal.value, qty: 1, spec: spec })
+		if (dish.custom) {
+			if (sliderVal.value < dish.price) { toast('价格不能低于最低售价'); return }
+			const spec = sliderVal.value <= tier1.value ? '标准' : (sliderVal.value <= tier2.value ? '加量' : '更足')
+			cartAdd({ id: dish.id, name: dish.name, image: dish.image, pay: sliderVal.value, qty: 1, spec: spec })
+		} else {
+			cartAdd({ id: dish.id, name: dish.name, image: dish.image, pay: dish.price, qty: detailQty.value, spec: '标准' })
+		}
 		toast('已加入饭盒')
 		screen.value = 'menu'
 	}
@@ -274,9 +299,9 @@
 	.dish-info { flex: 1; min-width: 0; margin-right: 8px; }
 	.dish-name { display: block; font-size: 14.5px; font-weight: 800; color: #22301F; }
 	.dish.sold .dish-name { color: #8C9689; }
-	.dish-min { display: block; font-size: 11px; color: #8C9689; margin-top: 3px; }
-	.btn-custom { border: 1px solid #2F6B3F; background-color: #FFFFFF; border-radius: 8px; padding: 6px 10px; flex-shrink: 0; }
-	.btn-custom-text { color: #2F6B3F; font-size: 10.5px; font-weight: 800; }
+	.dish-price-line { display: flex; flex-direction: row; align-items: baseline; margin-top: 3px; }
+	.dish-price { font-size: 15px; font-weight: 900; color: #24522F; }
+	.dish-qi { font-size: 10px; color: #8C9689; }
 	.add-btn { width: 30px; height: 30px; border-radius: 15px; background-color: #2F6B3F; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 	.add-plus { color: #FFFFFF; font-size: 17px; line-height: 17px; margin-top: -2px; }
 	.stepper { display: flex; flex-direction: row; align-items: center; border: 1px solid #E7E3D6; border-radius: 999px; padding: 2px; background-color: #FFFFFF; flex-shrink: 0; }
@@ -323,5 +348,15 @@
 	.cr { font-size: 10.5px; color: #8C9689; text-align: right; line-height: 1.6; }
 	.cta { margin: 14px 20px 24px; background-color: #2F6B3F; border-radius: 14px; height: 46px; display: flex; align-items: center; justify-content: center; }
 	.cta-text { color: #FFFFFF; font-size: 15px; font-weight: 800; }
+	/* 详情页固定价数量行 */
+	.fixed-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+	.fixed-price { font-size: 18px; font-weight: 900; color: #24522F; }
+	.fixed-qty-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 10px; }
+	.fixed-qty-row .pd { margin-top: 0; }
+	/* ---------- 定位弹层 ---------- */
+	.sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background-color: rgba(20,20,24,0.32); display: flex; align-items: flex-end; }
+	.sheet { background-color: #FFFFFF; width: 100%; padding: 20px; border-radius: 22px 22px 0 0; }
+	.sheet-title { display: block; font-size: 20px; font-weight: 900; margin-bottom: 6px; color: #22301F; }
+	.price-input { margin: 16px 0 4px; }
 	/* ---------- 轻提示 ---------- */
 </style>

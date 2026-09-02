@@ -79,3 +79,10 @@ export function sessionApplyProfile(name: string, location: string, phone: strin
 	customer.location = location
 	customer.phone = phone
 }
+
+// 把顾客信息（含首页改的配送地点）保存到云端档案；静默失败——未登录/网络差时本次会话内仍然生效
+export async function sessionSaveProfile(): Promise<void> {
+	try {
+		await requestJson('/cf-user', { action: 'saveProfile', profile: { name: customer.name, phone: customer.phone, location: customer.location } } as UTSJSONObject)
+	} catch (e) { console.log('sessionSaveProfile fail', e) }
+}
