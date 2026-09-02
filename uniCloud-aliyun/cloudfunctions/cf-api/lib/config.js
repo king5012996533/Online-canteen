@@ -1,11 +1,14 @@
 'use strict';
 /**
- * 全局配置：业务常量、后台口令、外部服务密钥，全部集中在这一个文件。
+ * 全局配置：业务常量集中在这一文件；机密（口令/密钥）在 secrets.js（不入 Git）。
  * 改完记得在 HBuilderX 重新上传部署 cf-api 才生效。
  */
 
+// ---------- 机密（secrets.js 被 .gitignore 忽略，模板见 secrets.example.js） ----------
+const SECRETS = require('./secrets.js');
+
 // ---------- 业务常量 ----------
-const ADMIN_PASSWORD = 'xk2026'; // 上线前务必修改！
+const ADMIN_PASSWORD = SECRETS.ADMIN_PASSWORD; // 厨房端口令（改口令改 secrets.js）
 const MIN_ORDER_TOTAL = 16;  // 起送金额（元）
 const MAX_QTY_PER_ITEM = 20; // 单个菜品最大数量
 // 一天两餐（同一份日菜单）：各餐次备菜 / 截单 / 出炉 / 收档时刻；seq 为订单号里的餐次字母
@@ -20,16 +23,16 @@ const BYPASS_CUTOFF = true;
 
 // ---------- AI 菜品配图 ----------
 // 复用本机电商生图技能同款 OpenAI 兼容接口（gpt-image-2）；
-// key 是用户自己的，跑在用户自己的云函数里。
+// key 在 secrets.js，跑在用户自己的云函数里。
 const IMG_API_BASE = 'https://www.ggwk1.online/v1';
-const IMG_API_KEY = 'sk-RhCNZ9afpFdNlqZyth53Cq37MrFmNAWP7wawmr5Pk1GSLvqs';
-const IMG_MODEL = 'gpt-image-2';
+const IMG_API_KEY = SECRETS.IMG_API_KEY;
+const IMG_MODEL = SECRETS.IMG_MODEL;
 
 // ---------- 微信小程序登录 ----------
 const WX_APPID = 'wx741ea5af08011b17';
-// AppSecret：新主体小程序（wx741ea5af08011b17）的密钥。
-// 换密钥后旧的 users 记录（openid 属于旧 AppID）不再匹配新登录，正式上线前建议清掉测试数据。
-const WX_APP_SECRET = '7dec6b6d7a9f7555fd0688d92c106bbb';
+// AppSecret 在 secrets.js。换密钥后旧的 users 记录（openid 属于旧 AppID）不再匹配新登录，
+// 正式上线前建议清掉测试数据。
+const WX_APP_SECRET = SECRETS.WX_APP_SECRET;
 
 module.exports = {
 	ADMIN_PASSWORD: ADMIN_PASSWORD,

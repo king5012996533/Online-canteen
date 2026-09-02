@@ -23,7 +23,15 @@ function toMenuDish(d) {
 	};
 }
 
-// action='getMenu'：读某日菜单（is_template=false）+ 菜品模板列表（前端"按模板生成草稿"用）
+// action='getMenu'：读某日菜单（is_template=false，只认最新发布批次）+ 菜品模板列表（前端"按模板生成草稿"用）
+function latestBatchDocs(docs) {
+	// 只保留最新发布批次（batch 缺失的老数据视为 0，仅当全是老数据时原样返回）
+	let latest = 0;
+	docs.forEach(function (d) { const b = typeof d.batch === 'number' ? d.batch : 0; if (b > latest) latest = b; });
+	if (latest === 0) return docs;
+	return docs.filter(function (d) { return (typeof d.batch === 'number' ? d.batch : 0) === latest; });
+}
+
 async function adminGetMenu(db, date) {
 	const dayRes = await db.collection('dishes').where({ menu_date: date, is_template: false }).get();
 	const tplRes = await db.collection('dishes').where({ is_template: true }).get();
@@ -32,7 +40,7 @@ async function adminGetMenu(db, date) {
 		ok: true,
 		data: {
 			date: date,
-			dishes: (dayRes.data || []).sort(bySort).map(toMenuDish),
+			dishes: latestBatchDocs(dayRes.data || []).sort(bySort).map(toMenuDish),
 			templates: (tplRes.data || []).sort(bySort).map(toMenuDish)
 		}
 	};
@@ -83,9 +91,15 @@ async function adminSaveMenu(db, date, dishes, syncTemplate) {
 		});
 	}
 
-	// 整表替换该日菜品（只动 is_template=false 的当日记录，不碰模板）
-	await db.collection('dishes').where({ menu_date: date, is_template: false }).remove();
+	// 两阶段发布：先写入新批次（带 batch 时间戳），成功后再清旧批次。
+	// 读取端（getToday / getMenu）只认最大 batch，发布中途失败用户最多看到旧菜单，
+	// 不会出现"先删后写"失败导致的空菜单窗口
+	const dbCmd = db.command;
+	const batch = Date.now();
+	docs.forEach(function (d) { d.batch = batch; });
 	await db.collection('dishes').add(docs);
+	await db.collection('dishes').where({ menu_date: date, is_template: false, batch: dbCmd.lt(batch) }).remove();
+	await db.collection('dishes').where({ menu_date: date, is_template: false, batch: dbCmd.exists(false) }).remove();
 
 	if (syncTemplate === true) {
 		const tplRes = await db.collection('dishes').where({ is_template: true }).get();
@@ -120,6 +134,30 @@ async function adminSaveMenu(db, date, dishes, syncTemplate) {
 	}
 
 	return { ok: true, data: { date: date, count: docs.length, synced: syncTemplate === true } };
+}
+
+// 生图网关返回的下载地址先做 SSRF 防护：只允许 https 公网地址，
+// 拒绝 localhost / 内网 IP 段 / 裸 IP / 无点域名，再发起下载
+function isSafeImageUrl(raw) {
+	if (typeof raw !== 'string' || raw === '') return false;
+	try {
+		const u = new URL(raw);
+		if (u.protocol !== 'https:') return false;
+		const h = u.hostname.toLowerCase();
+		if (h === '' || h.indexOf('.') < 0) return false;
+		if (h === 'localhost' || h.indexOf('.localhost') >= 0 || h.indexOf('.local') >= 0 || h.indexOf('.internal') >= 0) return false;
+		if (h.charAt(0) === '[') return false; // IPv6 字面量一律拒绝
+		if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) {
+			const p = h.split('.').map(Number);
+			if (p[0] === 0 || p[0] === 10 || p[0] === 127) return false;
+			if (p[0] === 192 && p[1] === 168) return false;
+			if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return false;
+			if (p[0] === 169 && p[1] === 254) return false;
+		}
+		return true;
+	} catch (e) {
+		return false;
+	}
 }
 
 // action='genDishImage'：按菜名生成菜品实拍风配图，上传云存储后返回 https 地址
@@ -162,12 +200,16 @@ async function genDishImage(name, category, desc) {
 				if (typeof item.b64_json === 'string' && item.b64_json.length > 100) {
 					b64 = item.b64_json.indexOf('base64,') >= 0 ? item.b64_json.split('base64,')[1] : item.b64_json;
 				} else if (typeof item.url === 'string' && item.url) {
-					// 网关返回图片链接时，下载成二进制再转 base64
-					const dl = await uniCloud.httpclient.request(item.url, { method: 'GET', timeout: 30000 });
-					if (dl.status === 200 && dl.data && dl.data.length > 1000) {
-						b64 = Buffer.from(dl.data).toString('base64');
+					// 网关返回图片链接时，先过 SSRF 校验再下载成二进制转 base64
+					if (!isSafeImageUrl(item.url)) {
+						lastErr = '图片链接不安全，已拦截';
 					} else {
-						lastErr = '图片下载失败(status ' + dl.status + ')';
+						const dl = await uniCloud.httpclient.request(item.url, { method: 'GET', timeout: 30000 });
+						if (dl.status === 200 && dl.data && dl.data.length > 1000 && dl.data.length < 20 * 1024 * 1024) {
+							b64 = Buffer.from(dl.data).toString('base64');
+						} else {
+							lastErr = '图片下载失败(status ' + dl.status + ')';
+						}
 					}
 				}
 			}
@@ -204,10 +246,27 @@ async function genDishImage(name, category, desc) {
 	}
 }
 
+// 口令试错限流（按 IP，实例内存级：多数攻击场景已够用；实例重启清零）
+const adminFails = new Map(); // ip -> { count, until }
+
 // 口令校验通过后的业务分发
-async function adminHandle(params) {
+async function adminHandle(params, clientIP) {
+	const now = Date.now();
+	const rec = clientIP ? adminFails.get(clientIP) : null;
+	if (rec && rec.until > now) {
+		return { ok: false, err: '口令尝试过多，请10分钟后再试' };
+	}
 	if (params.password !== ADMIN_PASSWORD) {
+		if (clientIP) {
+			const r = adminFails.get(clientIP) || { count: 0, until: 0 };
+			r.count += 1;
+			if (r.count >= 5) { r.count = 0; r.until = now + 10 * 60 * 1000; }
+			adminFails.set(clientIP, r);
+		}
 		return { ok: false, err: '口令错误' };
+	}
+	if (clientIP) {
+		adminFails.delete(clientIP);
 	}
 
 	const db = uniCloud.database();
@@ -233,10 +292,18 @@ async function adminHandle(params) {
 		if (typeof orderNo !== 'string' || !orderNo) {
 			return { ok: false, err: '缺少订单号' };
 		}
-		const res = await db.collection('orders').where({ order_no: orderNo }).update({ status: status });
-		if (!res.updated) {
+		// 状态机校验：pending→cooking|canceled；cooking→ready|canceled；ready→canceled；canceled 终态
+		const orderRes = await db.collection('orders').where({ order_no: orderNo }).limit(1).get();
+		if (!orderRes.data || orderRes.data.length === 0) {
 			return { ok: false, err: '订单不存在' };
 		}
+		const cur = orderRes.data[0].status;
+		const TRANSITIONS = { pending: ['cooking', 'canceled'], cooking: ['ready', 'canceled'], ready: ['canceled'], canceled: [] };
+		const allowed = TRANSITIONS[cur] || [];
+		if (allowed.indexOf(status) < 0) {
+			return { ok: false, err: '当前状态不能改为该状态' };
+		}
+		await db.collection('orders').where({ order_no: orderNo }).update({ status: status });
 		return { ok: true, data: { orderNo: orderNo, status: status } };
 	}
 

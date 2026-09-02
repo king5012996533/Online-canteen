@@ -12,7 +12,7 @@
  * 路由约定（前端 http.uts 按 path 前缀 /cf-menu /cf-order /cf-admin /cf-user
  * 推断出 mod 统一放进 body，云函数只认 body.mod，旧路径因此保持兼容）：
  *   mod = 'menu'  → lib/menu.js  （action: getToday）
- *   mod = 'order' → lib/order.js （action: create / getTodayOrders / updateStatus）
+ *   mod = 'order' → lib/order.js （action: create——仅下单；订单查询/改状态在 admin）
  *   mod = 'admin' → lib/admin.js （口令校验后：summary / updateStatus / getMenu / saveMenu / genDishImage）
  *   mod = 'user'  → lib/user.js  （微信登录：login / getProfile / saveProfile / myOrders）
  *
@@ -88,9 +88,11 @@ function isHttpEvent(e) {
 // 入口：按 mod 路由
 // ============================================================
 
-exports.main = async function (event) {
+exports.main = async function (event, context) {
 	const e = event || {};
 	const httpMode = isHttpEvent(e);
+	// 客户端 IP（用于后台口令限流）：URL 化 event 与 callFunction context 二者取其一
+	const clientIP = (context && context.CLIENTIP) || e.clientIP || '';
 	try {
 		// 浏览器跨域预检直接放行
 		if (httpMode && String(e.httpMethod || 'POST').toUpperCase() === 'OPTIONS') {
@@ -116,7 +118,7 @@ exports.main = async function (event) {
 		} else if (mod === 'order') {
 			payload = await orderHandle(p);
 		} else if (mod === 'admin') {
-			payload = await adminHandle(p); // 口令错误也返回 200，错误信息放在 payload.err
+			payload = await adminHandle(p, clientIP); // 口令错误也返回 200，错误信息放在 payload.err
 		} else if (mod === 'user') {
 			payload = await userHandle(p);
 		} else {

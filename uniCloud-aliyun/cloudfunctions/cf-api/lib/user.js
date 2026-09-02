@@ -63,8 +63,8 @@ async function userLogin(p) {
 	const usersCol = db.collection('users');
 	const found = await usersCol.where({ openid: openid }).limit(1).get();
 	if (found.data && found.data.length > 0) {
-		// 老用户：换新 token 并刷新登录时间，资料原样返回
-		await usersCol.doc(found.data[0]._id).update({ token: token, last_login_at: now });
+		// 老用户：换新 token（带 30 天过期时间）并刷新登录时间，资料原样返回
+		await usersCol.doc(found.data[0]._id).update({ token: token, token_expires_at: now + TOKEN_TTL_MS, last_login_at: now });
 		return ok({ token: token, profile: found.data[0].profile || emptyProfile });
 	}
 
@@ -72,6 +72,7 @@ async function userLogin(p) {
 	await usersCol.add({
 		openid: openid,
 		token: token,
+		token_expires_at: now + TOKEN_TTL_MS,
 		profile: emptyProfile,
 		created_at: now,
 		last_login_at: now
@@ -79,13 +80,21 @@ async function userLogin(p) {
 	return ok({ token: token, profile: emptyProfile });
 }
 
-// 按 token 找用户记录；找不到返回 null（各 action 统一报"登录已失效"）
+// token 有效期：30 天，过期后按"登录已失效"处理，前端会静默重登换新 token
+const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
+
+// 按 token 找用户记录；找不到或已过期返回 null（各 action 统一报"登录已失效"）
 async function findUserByToken(usersCol, token) {
 	const res = await usersCol.where({ token: token }).limit(1).get();
 	if (!res.data || res.data.length === 0) {
 		return null;
 	}
-	return res.data[0];
+	const user = res.data[0];
+	// 老记录没有 token_expires_at 字段时视为仍有效（兼容），下次登录起带过期时间
+	if (typeof user.token_expires_at === 'number' && user.token_expires_at < Date.now()) {
+		return null;
+	}
+	return user;
 }
 
 // action='getProfile'：入参 {token} → 返回 {profile}

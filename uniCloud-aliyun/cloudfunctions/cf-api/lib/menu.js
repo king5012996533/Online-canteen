@@ -84,9 +84,15 @@ async function menuGetToday() {
 		res = await dishesCol.where({ menu_date: today }).get();
 	}
 
+	// 只认最新发布批次（厨房端两阶段发布：先写新批次再清旧批次，
+	// 读取端按 batch 过滤后，发布中途用户也不会看到重复或空菜单）
+	let latestBatch = 0;
+	(res.data || []).forEach(function (d) { const b = typeof d.batch === 'number' ? d.batch : 0; if (b > latestBatch) latestBatch = b; });
+	const dayDocs = latestBatch > 0 ? (res.data || []).filter(function (d) { return (typeof d.batch === 'number' ? d.batch : 0) === latestBatch; }) : (res.data || []);
+
 	// 按 sort 升序输出；同一 id 若因并发播种出现重复，只保留第一条
 	const seen = {};
-	const dishes = (res.data || [])
+	const dishes = dayDocs
 		.sort(function (a, b) { return (a.sort || 0) - (b.sort || 0); })
 		.filter(function (d) {
 			if (seen[d.id]) return false;

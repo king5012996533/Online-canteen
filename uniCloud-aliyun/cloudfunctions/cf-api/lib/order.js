@@ -1,13 +1,13 @@
 'use strict';
 /**
- * mod = 'order'：下单 / 订单查询 / 改状态（原 cf-order）
- * action: create / getTodayOrders / updateStatus
+ * mod = 'order'：仅下单（原 cf-order）
+ * action: create（订单查询/改状态已收敛到 mod=admin，需口令，见 lib/admin.js）
  */
 
 const { BYPASS_CUTOFF, MIN_ORDER_TOTAL, MAX_QTY_PER_ITEM, MEALS } = require('./config.js');
 const { ok, fail, bjNow, bjDateStr, tsOfHM, pad2, pad3, round2, nextSeq } = require('./util.js');
 
-// action='create'：入参 items=[{id,qty,pay}]、customer={name,location,phone,note}
+// action='create'：入参 meal、items=[{id,qty,pay}]、customer={name,location,phone,note}、request_id（幂等键，选填）
 // 服务端逐项校验，绝不信任客户端。
 async function orderCreate(event) {
 	const db = uniCloud.database();
@@ -20,6 +20,17 @@ async function orderCreate(event) {
 	const meal = event.meal;
 	if (!MEALS[meal]) {
 		return fail('请选择午餐或晚餐');
+	}
+
+	// 0.5 幂等：前端每个"确认支付"意图生成一个 request_id；网络重试/重复点击时
+	// 命中同 request_id 的已有订单直接原样返回，不再重复建单
+	const requestId = typeof event.request_id === 'string' ? event.request_id.trim() : '';
+	if (requestId) {
+		const dupRes = await db.collection('orders').where({ request_id: requestId }).limit(1).get();
+		if (dupRes.data && dupRes.data.length > 0) {
+			const dup = dupRes.data[0];
+			return ok({ orderNo: dup.order_no, total: dup.total, duplicate: true });
+		}
 	}
 
 	// 1. 截单校验：北京时间当前 >= 当天该餐次截单时刻拒单（BYPASS_CUTOFF=true 时全局跳过，仅用于联调测试）
@@ -118,6 +129,7 @@ async function orderCreate(event) {
 		custom_extra: customExtra,
 		customer: { name: name, location: location, phone: phone, note: note },
 		uid: uid,
+		request_id: requestId,
 		test_order: BYPASS_CUTOFF === true,
 		created_at: Date.now()
 	});
@@ -222,41 +234,12 @@ async function buildDaySummary(db, date) {
 	};
 }
 
-// action='getTodayOrders'：查今天全部订单 + 聚合
-async function orderGetTodayOrders() {
-	const db = uniCloud.database();
-	const today = bjDateStr(bjNow());
-	return ok(await buildDaySummary(db, today));
-}
-
-// action='updateStatus'：入参 {orderNo, status}
-async function orderUpdateStatus(event) {
-	const status = event.status;
-	if (status !== 'cooking' && status !== 'ready' && status !== 'canceled') {
-		return fail('非法状态');
-	}
-	const orderNo = event.orderNo;
-	if (typeof orderNo !== 'string' || !orderNo) {
-		return fail('缺少订单号');
-	}
-	const db = uniCloud.database();
-	const res = await db.collection('orders').where({ order_no: orderNo }).update({ status: status });
-	if (!res.updated) {
-		return fail('订单不存在');
-	}
-	return ok({ orderNo: orderNo, status: status });
-}
-
 // order 模块分发
+// 【安全】只保留 create（用户下单）；getTodayOrders / updateStatus 属厨房管理能力，
+// 一律走 mod=admin（口令校验），匿名调用直接拒绝，防止泄露顾客信息 / 篡改订单状态
 async function orderHandle(p) {
 	if (p.action === 'create') {
 		return await orderCreate(p);
-	}
-	if (p.action === 'getTodayOrders') {
-		return await orderGetTodayOrders();
-	}
-	if (p.action === 'updateStatus') {
-		return await orderUpdateStatus(p);
 	}
 	return fail('不支持的操作');
 }

@@ -191,6 +191,8 @@
 	const customer = reactive({name: '', location: '', phone: '', note: ''})
 	const orderNumber = ref('')
 	const customPrice = ref('3')
+	// 幂等键：每次进入支付页生成一个，网络重试/重复点击时服务端据此去重
+	const payRequestId = ref('')
 	const priceDish = ref<Dish | null>(null)
 	const categories = ['素菜', '荤素搭配', '纯荤']
 	const dishes = ref<Dish[]>([])
@@ -366,12 +368,14 @@
 	}
 	function confirmCustomPrice() { const dish = priceDish.value; const value = Number(customPrice.value); if (dish !== null && value >= dish.price) { dish.pay = value; dish.qty += 1; priceDish.value = null } else { toast('价格不能低于起价') } }
 	function checkout() { if (total.value < 16) return; if (!isMealOpen(meal.value)) { toast(mealLabel.value + '已截单，请改点另一餐'); return } screen.value = 'check' }
-	// 结算页 → 模拟支付页：先做基础校验，订单在点「确认支付」后才真正创建
+	// 结算页 → 模拟支付页：先做基础校验，订单在点「确认支付」后才真正创建。
+	// 每次进入支付页生成新的幂等键：同一次支付意图重试不重复建单，重新下单则是新键
 	function goPay() {
 		if (submitting.value) return
 		if (customer.name.trim() === '' || customer.location.trim() === '') { toast('请填写姓名和取餐位置'); return }
 		if (!isMealOpen(meal.value)) { toast(mealLabel.value + '已截单，明天再来'); return }
 		if (selectedDishes.value.length === 0) { toast('先去菜单挑几个菜'); return }
+		payRequestId.value = 'r' + Date.now().toString(36) + Math.floor(Math.random() * 1e9).toString(36)
 		screen.value = 'pay'
 	}
 	async function confirmOrder() {
@@ -383,7 +387,7 @@
 		if (items.length === 0) { toast('先去菜单挑几个菜'); return }
 		submitting.value = true
 		try {
-			const result = await requestJson('/cf-order', { action: 'create', meal: meal.value, items: items, customer: { name: customer.name, location: customer.location, phone: customer.phone, note: customer.note } } as UTSJSONObject)
+			const result = await requestJson('/cf-order', { action: 'create', meal: meal.value, request_id: payRequestId.value, items: items, customer: { name: customer.name, location: customer.location, phone: customer.phone, note: customer.note } } as UTSJSONObject)
 			if (result !== null && result.getBoolean('ok') === true) {
 				const data = result.getJSON('data')
 				if (data instanceof UTSJSONObject) { orderNumber.value = data.getString('orderNo') ?? '' }
@@ -469,7 +473,9 @@
 	// 首次进入时静默登录并回填常用信息（失败不打扰点单，仅记日志）
 	onLoad(() => { silentLogin() })
 	tick()
-	setInterval(tick, 1000)
+	const tickTimer = setInterval(tick, 1000)
+	// 页面销毁时清理计时器，避免页面重建后叠加多个定时器
+	onUnload(() => { clearInterval(tickTimer) })
 </script>
 
 <style>
