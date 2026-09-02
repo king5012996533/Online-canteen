@@ -21,7 +21,7 @@
 		<scroll-view class="menu-panel" scroll-y="true">
 			<text v-if="loading" class="g-sub menu-state">正在加载今日菜单…</text>
 			<text v-else-if="dishes.length === 0" class="g-sub menu-state">今日菜单还没发布，早点来看看</text>
-			<view v-for="category in categories" :key="category" class="category">
+			<view v-for="category in menuCategories" :key="category" class="category">
 				<view class="cat-head"><text class="cat-title">{{category}}</text><text class="cat-more">查看更多</text></view>
 				<view v-for="dish in dishesByCategory(category)" :key="dish.id" class="dish-row" :class="{sold: dish.sold}">
 					<image class="dish-thumb" :src="dish.image" mode="aspectFill"></image>
@@ -78,6 +78,8 @@
 			<view class="cta" @click="addFromDetail"><text class="cta-text">加入饭盒</text></view>
 		</view>
 
+		<view v-if="toastMessage !== ''" class="g-toast"><text class="toast-text">{{toastMessage}}</text></view>
+
 		<!-- 配送地点选择弹层 -->
 		<view v-if="locSheet" class="sheet-mask"><view class="sheet">
 			<text class="sheet-title">配送地点</text>
@@ -105,7 +107,12 @@
 	const loading = ref(false)
 	const dateLabel = ref('')
 	const toastMessage = ref('')
-	const categories = ['素菜', '荤素搭配', '纯荤']
+	// 分类从菜单数据动态收集：厨房端自由输入的新分类用户端也能看到
+	const menuCategories = computed((): string[] => {
+		const cats: string[] = []
+		dishes.value.forEach((d: Dish) => { if (cats.indexOf(d.category) < 0) { cats.push(d.category) } })
+		return cats
+	})
 	const dishes = ref<Dish[]>([])
 	const selDish = ref<Dish | null>(null)
 	const sliderMin = ref(9)
@@ -348,6 +355,7 @@
 	.cr { font-size: 10.5px; color: #8C9689; text-align: right; line-height: 1.6; }
 	.cta { margin: 14px 20px 24px; background-color: #2F6B3F; border-radius: 14px; height: 46px; display: flex; align-items: center; justify-content: center; }
 	.cta-text { color: #FFFFFF; font-size: 15px; font-weight: 800; }
+	.toast-text { color: #FFFFFF; font-size: 13px; text-align: center; }
 	/* 详情页固定价数量行 */
 	.fixed-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
 	.fixed-price { font-size: 18px; font-weight: 900; color: #24522F; }

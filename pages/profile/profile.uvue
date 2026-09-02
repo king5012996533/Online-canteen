@@ -72,6 +72,7 @@
 
 <script setup lang="uts">
 	import { requestJson } from '../../common/http.uts'
+	import { customer } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
 
 	type OrderItem = { name: string; pay: number; qty: number }

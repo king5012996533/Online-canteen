@@ -81,7 +81,7 @@ async function orderCreate(event) {
 	// 3. 起送金额
 	total = round2(total);
 	if (total < MIN_ORDER_TOTAL) {
-		return fail('未达 ¥16 起送');
+		return fail('未达 ¥' + MIN_ORDER_TOTAL + ' 起送');
 	}
 	customExtra = round2(customExtra);
 
