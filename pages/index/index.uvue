@@ -1,13 +1,17 @@
 <template>
 	<view class="page">
 		<scroll-view class="scroll" scroll-y="true" :scroll-into-view="menuAnchor">
-			<!-- 屏1 首页：品牌行 + 开火时刻轴 + 今日主打 -->
+			<!-- 屏1 首页：品牌行 + 开火时刻轴（可切餐次）+ 双餐次入口 -->
 			<view v-if="screen === 'home'" class="home-content">
 				<view class="brand-row">
 					<view class="brand-left"><text class="wordmark">富记</text><text class="g-cap brand-sub">FUJI 线上饭堂</text></view>
 					<view class="loc-pill" @click="goProfile"><view class="loc-dot"></view><text class="loc-text">{{locLabel}}</text></view>
 				</view>
 				<view class="timeline">
+					<view class="tl-meals">
+						<view class="tl-meal-chip" :class="{'on': homeMeal === 'lunch'}" @click="homeMeal = 'lunch'"><text class="tl-meal-text" :class="{'on': homeMeal === 'lunch'}">午餐</text></view>
+						<view class="tl-meal-chip" :class="{'on': homeMeal === 'dinner'}" @click="homeMeal = 'dinner'"><text class="tl-meal-text" :class="{'on': homeMeal === 'dinner'}">晚餐</text></view>
+					</view>
 					<view class="tl-now">
 						<view class="tl-status"><view class="tl-livedot"></view><text class="tl-status-text">{{tlStatus}}</text></view>
 						<text class="tl-right">{{tlRight}}</text>
@@ -21,10 +25,10 @@
 						<view class="tl-nowdot" :style="{left: tlPos + '%'}"></view>
 					</view>
 					<view class="tl-labels">
-						<text class="tl-label s0">10:00 备菜</text>
-						<text class="tl-label s1">11:00 开火</text>
-						<text class="tl-label s2">11:30 出炉</text>
-						<text class="tl-label s3">13:00 收档</text>
+						<text class="tl-label s0">{{tlL0}}</text>
+						<text class="tl-label s1">{{tlL1}}</text>
+						<text class="tl-label s2">{{tlL2}}</text>
+						<text class="tl-label s3">{{tlL3}}</text>
 					</view>
 				</view>
 				<view class="hero">
@@ -33,22 +37,37 @@
 						<view class="hero-chip g-chip-solid"><text class="hero-chip-text">今日现做</text></view>
 					</view>
 					<text class="home-h2">{{homeHeadline}}</text>
-					<text class="home-sub">11:00 截单 · 后厨现炒出锅 · 13:00 前大堂自取 · 免配送费</text>
+					<text class="home-sub">午晚两餐 · 后厨现炒出锅 · 大堂自取 · 免配送费</text>
+				</view>
+				<view class="entries">
+					<view class="entry" @click="enterMeal('lunch')">
+						<view class="entry-main">
+							<view class="entry-title-row"><text class="entry-title">午餐</text><text class="entry-state" :class="entryStateClass('lunch')">{{entryStateText('lunch')}}</text></view>
+							<text class="entry-meta">11:00 截单 · 11:30 出炉 · 13:00 收档</text>
+						</view>
+						<text class="entry-arrow">›</text>
+					</view>
+					<view class="entry" @click="enterMeal('dinner')">
+						<view class="entry-main">
+							<view class="entry-title-row"><text class="entry-title">晚餐</text><text class="entry-state" :class="entryStateClass('dinner')">{{entryStateText('dinner')}}</text></view>
+							<text class="entry-meta">16:00 截单 · 17:30 出炉 · 19:30 收档</text>
+						</view>
+						<text class="entry-arrow">›</text>
+					</view>
 				</view>
 				<view class="facts">
-					<view class="g-chip-outline fact-chip"><text class="fact-text">11:00 截单</text></view>
+					<view class="g-chip-outline fact-chip"><text class="fact-text">午 · 11:00 截单</text></view>
+					<view class="g-chip-outline fact-chip"><text class="fact-text">晚 · 16:00 截单</text></view>
 					<view class="g-chip-outline fact-chip"><text class="fact-text">现炒现做</text></view>
-					<view class="g-chip-outline fact-chip"><text class="fact-text">菜场直供</text></view>
 					<view class="g-chip-outline fact-chip"><text class="fact-text">¥16 起送</text></view>
 				</view>
-				<button class="g-btn-primary cta" @click="openMenu">浏览今日菜单</button>
 				<view class="admin-entry" @click="goAdmin"><text class="g-sub">厨房端 ›</text></view>
 			</view>
 
-			<!-- 屏2 今日菜单：分类 chip + 白底大图菜品列表 -->
+			<!-- 屏2 今日菜单（按餐次）：分类 chip + 白底大图菜品列表 -->
 			<view v-else-if="screen === 'menu'" class="menu-content">
 				<view class="menu-header">
-					<view><text class="g-title">今日菜单</text><text class="menu-date">{{dateLabel}} · 11:00 截单</text></view>
+					<view><text class="g-title">今日{{mealLabel}}</text><text class="menu-date">{{menuSub}}</text></view>
 					<button class="back" @click="screen = 'home'">‹</button>
 				</view>
 				<view class="pills">
@@ -82,7 +101,7 @@
 			<!-- 屏3 结算：订单小结 + 收餐信息 -->
 			<view v-else-if="screen === 'check'" class="check-content">
 				<view class="menu-header">
-					<view><text class="g-title">确认订单</text><text class="menu-date">截单后开火现炒 · 13:00 前请到大堂取餐</text></view>
+					<view><text class="g-title">确认订单 · {{mealLabel}}</text><text class="menu-date">{{checkSub}}</text></view>
 					<button class="back" @click="screen = 'menu'">‹</button>
 				</view>
 				<view class="order-card">
@@ -94,7 +113,7 @@
 				<view class="form-field"><view class="form-label-row"><text class="g-label">取餐位置</text><text class="g-req">*</text></view><input class="g-field-input" v-model="customer.location" placeholder="例如：产品部 · 18F" placeholder-class="g-ph" /></view>
 				<view class="form-field"><view class="form-label-row"><text class="g-label">手机号（选填）</text></view><input class="g-field-input" v-model="customer.phone" type="number" placeholder="异常联系用" placeholder-class="g-ph" /></view>
 				<view class="form-field"><view class="form-label-row"><text class="g-label">备注（选填）</text></view><input class="g-field-input" v-model="customer.note" placeholder="忌口、少辣、不要香菜…" placeholder-class="g-ph" /></view>
-				<view class="notice"><text class="notice-text">主食随餐附送。提交后如需取消或改动，请在 11:00 截单前联系饭堂。</text></view>
+				<view class="notice"><text class="notice-text">主食随餐附送。提交后如需取消或改动，请在 {{mealCloseLabel}} 截单前联系饭堂。</text></view>
 				<button class="g-btn-primary cta" @click="goPay">提交订单 · 去支付</button>
 			</view>
 
@@ -103,7 +122,7 @@
 				<view class="pay-card">
 					<view class="pay-merchant"><view class="pay-avatar"><text class="pay-avatar-char">富</text></view><text class="pay-merchant-name">富记线上饭堂</text></view>
 					<text class="pay-amount">¥{{total}}</text>
-					<text class="pay-mode">微信支付 · 模拟环境</text>
+					<text class="pay-mode">微信支付 · 模拟环境 · {{mealLabel}}</text>
 				</view>
 				<view class="notice"><text class="notice-text">当前为测试模式：此步不产生真实扣款。微信支付商户号开通后，这里会替换为真正的微信支付。</text></view>
 				<button class="g-btn-primary cta" :disabled="submitting" @click="confirmOrder">{{submitting ? '支付中…' : '确认支付'}}</button>
@@ -114,7 +133,7 @@
 			<view v-else class="success-content">
 				<view class="ok-wrap">
 					<view class="success-mark"><text class="success-mark-char">✓</text></view>
-					<text class="success-title">下单成功</text>
+					<text class="success-title">{{mealLabel}}下单成功</text>
 					<text class="g-sub success-note">饭堂已收到，截单后开火现炒</text>
 					<view class="ticket">
 						<view class="pcode-row">
@@ -127,7 +146,7 @@
 							<view class="trow"><text class="trow-name trow-name-hl">合计</text><text class="g-price trow-total">¥{{orderTotal}}</text></view>
 							<view class="trow"><text class="trow-name trow-dim">取餐人</text><text class="trow-value">{{customer.name || '未填写'}}</text></view>
 							<view class="trow"><text class="trow-name trow-dim">取餐位置</text><text class="trow-value">{{customer.location || '大堂'}}</text></view>
-							<view class="trow"><text class="trow-name trow-dim">建议取餐</text><text class="trow-value">12:40 前后</text></view>
+							<view class="trow"><text class="trow-name trow-dim">建议取餐</text><text class="trow-value">{{suggestPickup}}</text></view>
 						</view>
 					</view>
 					<view class="ok-links">
@@ -143,10 +162,10 @@
 					<view class="cart-bubble"><text class="cart-count">{{itemCount}}</text></view>
 					<view class="cart-sum">
 						<text class="cart-amount">¥{{total}}</text>
-						<text class="cart-hint">{{total >= 16 ? '可结算 · 大堂自取' : '再点 ¥' + (16 - total) + ' 可起送'}}</text>
+						<text class="cart-hint">{{total >= 16 ? ('可结算 · ' + mealLabel) : '再点 ¥' + (16 - total) + ' 可起送'}}</text>
 					</view>
 				</view>
-				<button class="g-btn-primary cart-go" :disabled="total < 16 || (cutoffPassed && !testBypass)" @click="checkout">去结算</button>
+				<button class="g-btn-primary cart-go" :disabled="total < 16 || !isMealOpen(meal)" @click="checkout">去结算</button>
 			</view>
 		</view>
 		<view v-if="priceDish !== null" class="sheet-mask"><view class="sheet"><text class="g-cap">素菜加价</text><text class="sheet-title">{{priceDish?.name}}</text><text class="g-sub">请输入你愿意支付的价格（不低于 {{priceDish?.price}} 元）</text><input class="g-field-input price-input" type="number" v-model="customPrice"/><button class="g-btn-primary cta" @click="confirmCustomPrice">加入菜单</button><button class="g-btn-ghost cta" @click="priceDish = null">取消</button></view></view>
@@ -160,14 +179,13 @@
 	type Dish = { id: string; category: string; name: string; desc: string; price: number; pay: number; qty: number; custom: boolean; sold: boolean; image: string }
 	type OrderLine = { id: string; qty: number; pay: number }
 	type OrderSnapshot = { name: string; qty: number; pay: number }
-	// 【测试开关】true = 暂时解除 11:00 截单限制，随时可走完整下单 + 模拟支付流程。
+	// 【测试开关】true = 暂时解除两餐截单限制，随时可走完整下单 + 模拟支付流程。
 	// 与 cf-api 里的 BYPASS_CUTOFF 配套；正式上线前两处都要关掉！
 	const testBypass = true
 	const screen = ref('home')
 	const loading = ref(false)
 	const submitting = ref(false)
 	const countdown = ref('--:--')
-	const cutoffPassed = ref(false)
 	const dateLabel = ref('')
 	const toastMessage = ref('')
 	const customer = reactive({name: '', location: '', phone: '', note: ''})
@@ -183,8 +201,41 @@
 	const total = computed(() => dishes.value.reduce((sum, dish) => sum + dish.qty * dish.pay, 0))
 	const itemCount = computed(() => dishes.value.reduce((sum, dish) => sum + dish.qty, 0))
 	const selectedDishes = computed(() => dishes.value.filter((dish) => dish.qty > 0))
-	// 取餐码：取订单号尾段（FJ-MMDD-NNN → #NNN）
-	const pickupCode = computed(() => { const no = orderNumber.value; if (no.length >= 3) { return '#' + no.substring(no.length - 3) } return '--' })
+	// 取餐码：订单号尾段自带餐次（FJ-MMDD-L001 → #L001）
+	const pickupCode = computed(() => { const no = orderNumber.value; if (no.length >= 4) { return '#' + no.substring(no.length - 4) } return '--' })
+
+	// ---------- 餐次配置：与 cf-api/lib/config.js 的 MEALS 保持一致，改两处要同步 ----------
+	class MealCfg {
+		key: string = ''
+		label: string = ''
+		prepMin: number = 0
+		orderCloseMin: number = 0
+		readyMin: number = 0
+		closeMin: number = 0
+		prepLabel: string = ''
+		orderCloseLabel: string = ''
+		readyLabel: string = ''
+		closeLabel: string = ''
+		suggest: string = ''
+	}
+	const MEAL_LUNCH = new MealCfg()
+	MEAL_LUNCH.key = 'lunch'; MEAL_LUNCH.label = '午餐'; MEAL_LUNCH.prepMin = 600; MEAL_LUNCH.orderCloseMin = 660; MEAL_LUNCH.readyMin = 690; MEAL_LUNCH.closeMin = 780
+	MEAL_LUNCH.prepLabel = '10:00'; MEAL_LUNCH.orderCloseLabel = '11:00'; MEAL_LUNCH.readyLabel = '11:30'; MEAL_LUNCH.closeLabel = '13:00'; MEAL_LUNCH.suggest = '12:40 前后'
+	const MEAL_DINNER = new MealCfg()
+	MEAL_DINNER.key = 'dinner'; MEAL_DINNER.label = '晚餐'; MEAL_DINNER.prepMin = 900; MEAL_DINNER.orderCloseMin = 960; MEAL_DINNER.readyMin = 1050; MEAL_DINNER.closeMin = 1170
+	MEAL_DINNER.prepLabel = '15:00'; MEAL_DINNER.orderCloseLabel = '16:00'; MEAL_DINNER.readyLabel = '17:30'; MEAL_DINNER.closeLabel = '19:30'; MEAL_DINNER.suggest = '18:30 前后'
+	function cfgOf(key: string): MealCfg { return key === 'dinner' ? MEAL_DINNER : MEAL_LUNCH }
+
+	// 当前点单餐次（入口决定，整条流程锁定）
+	const meal = ref('lunch')
+	// 餐次状态：open 可点单 / cooking 制作中 / ready 可取餐 / closed 已收档
+	const mealState = reactive({ lunch: 'open', dinner: 'open' })
+	// 首页时刻轴当前展示的餐次
+	const homeMeal = ref('lunch')
+	function stateOf(key: string): string { return key === 'dinner' ? mealState.dinner : mealState.lunch }
+	function setMealState(key: string, s: string) { if (key === 'dinner') { mealState.dinner = s } else { mealState.lunch = s } }
+	function isMealOpen(key: string): boolean { if (testBypass) return true; return stateOf(key) === 'open' }
+
 	// 首页主打：第一道在售荤菜（荤素搭配 → 纯荤 → 素菜）
 	const todayDish = computed((): Dish | null => {
 		const pool = dishes.value.filter((dish) => !dish.sold)
@@ -195,7 +246,18 @@
 	})
 	const homeHeadline = computed((): string => { const dish = todayDish.value; if (dish === null) return '今日菜单已出'; return '今天吃' + dish.name })
 	const locLabel = computed((): string => { const loc = customer.location.trim(); if (loc === '') return '大堂自取'; return loc })
-	// 开火时刻轴：10:00 备菜 → 11:00 开火(截单) → 11:30 出炉 → 13:00 收档
+	const mealLabel = computed((): string => { return cfgOf(meal.value).label })
+	const mealCloseLabel = computed((): string => { return cfgOf(meal.value).orderCloseLabel })
+	const menuSub = computed((): string => { const c = cfgOf(meal.value); return dateLabel.value + ' · ' + c.orderCloseLabel + ' 截单 · ' + c.readyLabel + ' 出炉' })
+	const checkSub = computed((): string => { const c = cfgOf(meal.value); return '截单后开火现炒 · ' + c.closeLabel + ' 前请到大堂取餐' })
+	const suggestPickup = computed((): string => { return cfgOf(meal.value).suggest })
+	// 时刻轴四个停靠点文案（随 homeMeal 切换）
+	const tlL0 = computed((): string => { return cfgOf(homeMeal.value).prepLabel + ' 备菜' })
+	const tlL1 = computed((): string => { return cfgOf(homeMeal.value).orderCloseLabel + ' 开火' })
+	const tlL2 = computed((): string => { return cfgOf(homeMeal.value).readyLabel + ' 出炉' })
+	const tlL3 = computed((): string => { return cfgOf(homeMeal.value).closeLabel + ' 收档' })
+
+	// 开火时刻轴：prep 备菜 → orderClose 开火(截单) → ready 出炉 → close 收档
 	const tlPos = ref(0)
 	const tlStatus = ref('')
 	const tlRight = ref('')
@@ -205,19 +267,43 @@
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
 	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
 	function bjNow(): Date { const now = new Date(); return new Date(now.getTime() + (480 + now.getTimezoneOffset()) * 60000) }
+	function updateMealState(key: string, min: number) {
+		const c = cfgOf(key)
+		let s = 'closed'
+		if (min < c.closeMin) { if (min < c.orderCloseMin) { s = 'open' } else if (min < c.readyMin) { s = 'cooking' } else { s = 'ready' } }
+		setMealState(key, s)
+	}
+	function entryStateText(key: string): string { const s = stateOf(key); if (s === 'open') return '可点单'; if (s === 'cooking') return '制作中'; if (s === 'ready') return '可取餐'; return '已收档' }
+	function entryStateClass(key: string): string { const s = stateOf(key); if (s === 'open') return 'st-open'; if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-ready'; return 'st-closed' }
 	function tick() {
 		const now = bjNow()
-		const dayStart = Math.floor(now.getTime() / 86400000) * 86400000
-		const diff = dayStart + 11 * 3600000 - now.getTime()
-		if (diff <= 0 && !testBypass) { cutoffPassed.value = true; countdown.value = '已截单' } else { cutoffPassed.value = false; if (diff <= 0) { countdown.value = '测试模式' } else { const s = Math.floor(diff / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); countdown.value = h + ':' + pad2(m) + ':' + pad2(s % 60) } }
-		// 时刻轴：分钟数分段线性映射到 0~100%
 		const min = now.getUTCHours() * 60 + now.getUTCMinutes()
+		updateMealState('lunch', min)
+		updateMealState('dinner', min)
+		// 展示中的餐次收档了就自动切到另一餐（两餐都收档则保持）
+		if (stateOf(homeMeal.value) === 'closed') {
+			const other = homeMeal.value === 'lunch' ? 'dinner' : 'lunch'
+			if (stateOf(other) !== 'closed') { homeMeal.value = other }
+		}
+		// 时刻轴：分钟数分段线性映射到 0~100%
+		const c = cfgOf(homeMeal.value)
 		let pos = 0
-		if (min <= 600) { pos = 0 } else if (min >= 780) { pos = 100 } else if (min <= 660) { pos = (min - 600) / 60 * 33.3 } else if (min <= 690) { pos = 33.3 + (min - 660) / 30 * 33.3 } else { pos = 66.6 + (min - 690) / 90 * 33.4 }
+		if (min <= c.prepMin) { pos = 0 } else if (min >= c.closeMin) { pos = 100 } else if (min <= c.orderCloseMin) { pos = (min - c.prepMin) / (c.orderCloseMin - c.prepMin) * 33.3 } else if (min <= c.readyMin) { pos = 33.3 + (min - c.orderCloseMin) / (c.readyMin - c.orderCloseMin) * 33.3 } else { pos = 66.6 + (min - c.readyMin) / (c.closeMin - c.readyMin) * 33.4 }
 		tlPos.value = Math.round(pos * 10) / 10
-		const hm = now.getUTCHours() + ':' + pad2(now.getUTCMinutes())
-		if (min < 600) { tlStatus.value = hm + ' · 今日备菜中' } else if (min < 660) { tlStatus.value = hm + ' · 接受点单中' } else if (min < 690) { tlStatus.value = hm + ' · 后厨开火中' } else if (min < 780) { tlStatus.value = hm + ' · 已出炉 · 可取餐' } else { tlStatus.value = '今日已收档 · 明天再来' }
-		if (min < 660) { tlRight.value = '距截单 ' + countdown.value } else if (min < 780) { tlRight.value = '11:30 开始取餐' } else { tlRight.value = '' }
+		const state = stateOf(homeMeal.value)
+		// 倒计时数字（供 open 状态显示，先算再用）
+		const dayStart = Math.floor(now.getTime() / 86400000) * 86400000
+		const diffOpen = dayStart + c.orderCloseMin * 60000 - now.getTime()
+		if (diffOpen <= 0) { countdown.value = '已截单' } else { const s = Math.floor(diffOpen / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); countdown.value = h + ':' + pad2(m) + ':' + pad2(s % 60) }
+		if (state === 'closed') {
+			tlStatus.value = '今日已收档 · 明天再来'
+			tlRight.value = ''
+		} else {
+			const hm = now.getUTCHours() + ':' + pad2(now.getUTCMinutes())
+			if (state === 'open') { tlStatus.value = hm + ' · 接受点单中' } else if (state === 'cooking') { tlStatus.value = hm + ' · 后厨开火中' } else { tlStatus.value = hm + ' · 已出炉 · 可取餐' }
+			// 右侧：距本餐截单倒计时 / 出炉与取餐提示
+			if (state === 'open') { tlRight.value = '距截单 ' + countdown.value } else if (state === 'cooking') { tlRight.value = c.readyLabel + ' 出炉' } else { tlRight.value = c.closeLabel + ' 前取餐' }
+		}
 	}
 	// 菜单指纹：id+菜名+价格+售罄，用于判断厨房端是否发布过新菜单
 	function menuSignature(list: Dish[]): string {
@@ -260,10 +346,17 @@
 		} catch (e) { if (!silent) toast('网络异常，请检查网络后重试') }
 		if (!silent) loading.value = false
 	}
-	function openMenu() { screen.value = 'menu' }
 	function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
 	// 取餐点胶囊：跳到「我的」维护常用取餐位置
 	function goProfile() { uni.switchTab({ url: '/pages/profile/profile' }) }
+	// 餐次入口：锁定本单餐次进入菜单
+	function enterMeal(key: string) {
+		if (!isMealOpen(key)) { toast(cfgOf(key).label + '已截单，明天再来'); return }
+		meal.value = key
+		activePill.value = '素菜'
+		menuAnchor.value = ''
+		screen.value = 'menu'
+	}
 	function changeQty(id: string, amount: number) {
 		const dish = dishes.value.find((item) => item.id === id)
 		if (dish === null || dish === undefined) return
@@ -272,25 +365,25 @@
 		if (dish.qty === 0) dish.pay = dish.price
 	}
 	function confirmCustomPrice() { const dish = priceDish.value; const value = Number(customPrice.value); if (dish !== null && value >= dish.price) { dish.pay = value; dish.qty += 1; priceDish.value = null } else { toast('价格不能低于起价') } }
-	function checkout() { if (total.value < 16) return; screen.value = 'check' }
+	function checkout() { if (total.value < 16) return; if (!isMealOpen(meal.value)) { toast(mealLabel.value + '已截单，请改点另一餐'); return } screen.value = 'check' }
 	// 结算页 → 模拟支付页：先做基础校验，订单在点「确认支付」后才真正创建
 	function goPay() {
 		if (submitting.value) return
 		if (customer.name.trim() === '' || customer.location.trim() === '') { toast('请填写姓名和取餐位置'); return }
-		if (cutoffPassed.value && !testBypass) { toast('今日已截单，明天上午再来'); return }
+		if (!isMealOpen(meal.value)) { toast(mealLabel.value + '已截单，明天再来'); return }
 		if (selectedDishes.value.length === 0) { toast('先去菜单挑几个菜'); return }
 		screen.value = 'pay'
 	}
 	async function confirmOrder() {
 		if (submitting.value) return
 		if (customer.name.trim() === '' || customer.location.trim() === '') { toast('请填写姓名和取餐位置'); return }
-		if (cutoffPassed.value && !testBypass) { toast('今日已截单，明天上午再来'); return }
+		if (!isMealOpen(meal.value)) { toast(mealLabel.value + '已截单，明天再来'); return }
 		const items: OrderLine[] = []
 		selectedDishes.value.forEach((dish: Dish) => { const line: OrderLine = { id: dish.id, qty: dish.qty, pay: dish.pay }; items.push(line) })
 		if (items.length === 0) { toast('先去菜单挑几个菜'); return }
 		submitting.value = true
 		try {
-			const result = await requestJson('/cf-order', { action: 'create', items: items, customer: { name: customer.name, location: customer.location, phone: customer.phone, note: customer.note } } as UTSJSONObject)
+			const result = await requestJson('/cf-order', { action: 'create', meal: meal.value, items: items, customer: { name: customer.name, location: customer.location, phone: customer.phone, note: customer.note } } as UTSJSONObject)
 			if (result !== null && result.getBoolean('ok') === true) {
 				const data = result.getJSON('data')
 				if (data instanceof UTSJSONObject) { orderNumber.value = data.getString('orderNo') ?? '' }
@@ -392,7 +485,12 @@
 	.loc-dot { width: 6px; height: 6px; border-radius: 3px; background-color: #FF4A17; margin-right: 6px; }
 	.loc-text { font-size: 12px; font-weight: 600; color: #141418; }
 	/* 开火时刻轴 */
-	.timeline { margin-top: 20px; }
+	.timeline { margin-top: 18px; }
+	.tl-meals { display: flex; flex-direction: row; margin-bottom: 12px; }
+	.tl-meal-chip { border: 1px solid #ECECEB; border-radius: 999px; padding: 5px 14px; margin-right: 8px; background-color: #FFFFFF; }
+	.tl-meal-chip.on { border-color: #141418; background-color: #141418; }
+	.tl-meal-text { font-size: 12px; font-weight: 600; color: #141418; }
+	.tl-meal-text.on { color: #FFFFFF; font-weight: 700; }
 	.tl-now { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 	.tl-status { display: flex; flex-direction: row; align-items: center; }
 	.tl-livedot { width: 8px; height: 8px; border-radius: 4px; background-color: #FF4A17; margin-right: 7px; }
@@ -417,7 +515,20 @@
 	.hero-chip-text { color: #FFFFFF; font-size: 11px; font-weight: 600; }
 	.home-h2 { display: block; font-size: 24px; font-weight: 900; margin-top: 14px; color: #141418; }
 	.home-sub { display: block; font-size: 12px; color: #86868B; margin-top: 6px; line-height: 1.6; }
-	.facts { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 14px; }
+	/* 双餐次入口 */
+	.entries { margin-top: 18px; }
+	.entry { display: flex; flex-direction: row; align-items: center; justify-content: space-between; border: 1px solid #ECECEB; border-radius: 18px; padding: 15px 16px; margin-bottom: 10px; background-color: #FFFFFF; }
+	.entry-main { flex: 1; min-width: 0; }
+	.entry-title-row { display: flex; flex-direction: row; align-items: center; }
+	.entry-title { font-size: 17px; font-weight: 800; color: #141418; margin-right: 8px; }
+	.entry-state { font-size: 10px; font-weight: 700; border-radius: 6px; padding: 3px 8px; }
+	.st-open { background-color: #141418; color: #FFFFFF; }
+	.st-cooking { background-color: #FFFFFF; color: #141418; border: 1px solid #ECECEB; }
+	.st-ready { background-color: #FF4A17; color: #FFFFFF; }
+	.st-closed { background-color: #F6F6F4; color: #86868B; }
+	.entry-meta { display: block; font-size: 11px; color: #86868B; margin-top: 5px; }
+	.entry-arrow { font-size: 20px; color: #B9B9BE; margin-left: 10px; }
+	.facts { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 16px; }
 	.fact-chip { margin: 0 7px 7px 0; }
 	.fact-text { font-size: 11px; font-weight: 600; color: #141418; }
 	.admin-entry { display: flex; flex-direction: row; justify-content: center; margin-top: 16px; }

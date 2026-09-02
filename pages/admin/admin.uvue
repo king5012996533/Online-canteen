@@ -53,19 +53,24 @@
 					<view class="sum-card">
 						<view class="sum-head">
 							<text class="sum-date">{{sumDate}}</text>
-							<text class="sum-badge" :class="cutoffPassed ? 'badge-cut' : 'badge-live'">{{cutoffPassed ? '已截单' : '接单中'}}</text>
 						</view>
-						<view class="lines">
-							<view v-if="dishLines.length === 0" class="line"><text class="muted">今日还没有有效订单</text></view>
-							<view v-for="(line, index) in dishLines" :key="index" class="line">
-								<text class="line-name">{{line.name}}</text>
-								<text class="line-qty">× {{line.qty}}</text>
-								<text class="line-amount">¥{{fmt2(line.amount)}}</text>
+						<view v-for="meal in mealBlocks" :key="meal.key" class="meal-block">
+							<view class="meal-head">
+								<text class="meal-title">{{meal.title}}</text>
+								<text class="sum-badge" :class="meal.stateCls">{{meal.state}}</text>
 							</view>
-						</view>
-						<view class="sum-foot">
-							<text class="sum-meta">共 {{orderCount}} 单 · 含加价 ¥{{fmt2(customExtra)}}</text>
-							<text class="sum-total">GMV ¥{{fmt2(totalGmv)}}</text>
+							<view class="lines">
+								<view v-if="meal.lines.length === 0" class="line"><text class="muted">该餐次还没有有效订单</text></view>
+								<view v-for="(line, li) in meal.lines" :key="li" class="line">
+									<text class="line-name">{{line.name}}</text>
+									<text class="line-qty">× {{line.qty}}</text>
+									<text class="line-amount">¥{{fmt2(line.amount)}}</text>
+								</view>
+							</view>
+							<view class="sum-foot">
+								<text class="sum-meta">共 {{meal.orderCount}} 单 · 含加价 ¥{{fmt2(meal.customExtra)}}</text>
+								<text class="sum-total">GMV ¥{{fmt2(meal.gmv)}}</text>
+							</view>
 						</view>
 					</view>
 
@@ -73,7 +78,10 @@
 
 					<view v-for="order in orders" :key="order.no" class="order-card" :class="{'order-cancel': order.status === 'canceled'}">
 						<view class="oc-head">
-							<text class="oc-no">{{order.no}}</text>
+							<view class="oc-no-row">
+								<text class="oc-no">{{order.no}}</text>
+								<text class="oc-meal" :class="order.meal === 'dinner' ? 'meal-dinner' : 'meal-lunch'">{{order.meal === 'dinner' ? '晚餐' : '午餐'}}</text>
+							</view>
 							<text class="oc-status" :class="statusClass(order.status)">{{statusText(order.status)}}</text>
 						</view>
 						<view class="oc-cust">
@@ -181,6 +189,7 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 	// 厨房管理端（小程序版）：走 cf-api 云函数（mod=admin）HTTP 直连，与点单页同源同模式。
 	// 功能：今日订单（汇总 + 状态流转）· 菜单发布（编辑某日菜单，可同步模板）· 蓝牙热敏小票打印（58mm ESC/POS + GBK）
 	type DishLine = { name: string; qty: number; amount: number }
+	type MealBlock = { key: string; title: string; state: string; stateCls: string; lines: DishLine[]; orderCount: number; gmv: number; customExtra: number }
 	type MenuDish = { id: string; category: string; name: string; desc: string; basePrice: number; canCustomPrice: boolean; image: string; soldOut: boolean }
 
 
@@ -192,11 +201,7 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 
 	const loading = ref(false)
 	const sumDate = ref('')
-	const cutoffPassed = ref(false)
-	const dishLines = ref<DishLine[]>([])
-	const totalGmv = ref(0)
-	const customExtra = ref(0)
-	const orderCount = ref(0)
+	const mealBlocks = ref<MealBlock[]>([])
 	const orders = ref<AdminOrder[]>([])
 	const toastMessage = ref('')
 	const busyNo = ref('')
@@ -232,25 +237,69 @@ initPrinter(toast)
 	}
 
 
-	function applySummary(result: UTSJSONObject) {
-		const data = result.getJSON('data')
-		if (!(data instanceof UTSJSONObject)) { toast('数据格式异常'); return }
-		sumDate.value = data.getString('date') ?? ''
-		cutoffPassed.value = data.getBoolean('cutoffPassed') === true
-		totalGmv.value = data.getNumber('totalGmv') ?? 0
-		customExtra.value = data.getNumber('customExtra') ?? 0
-		orderCount.value = Math.floor(data.getNumber('orderCount') ?? 0)
+	// 北京当前时刻（与 index 页 bjNow 同口径：平移到北京墙上钟后按 UTC 读）
+	function bjNow(): Date {
+		return new Date(Date.now() + (480 + new Date().getTimezoneOffset()) * 60000)
+	}
+
+	// 餐次状态：未截单=可点单；截单~出炉=制作中；出炉~收档=可取餐；收档后=已收档
+	// 午餐 11:00/11:30/13:00，晚餐 16:00/17:30/19:30（北京时间）
+	function mealStateOf(cutoffPassed: boolean, meal: string, bj: Date): string {
+		const mins = bj.getUTCHours() * 60 + bj.getUTCMinutes()
+		const dinner = meal === 'dinner'
+		const cut = dinner ? 16 * 60 : 11 * 60
+		const oven = dinner ? 17 * 60 + 30 : 11 * 60 + 30
+		const close = dinner ? 19 * 60 + 30 : 13 * 60
+		if (mins >= close) { return '已收档' }
+		if (mins >= oven) { return '可取餐' }
+		if (cutoffPassed || mins >= cut) { return '制作中' }
+		return '可点单'
+	}
+
+	function mealStateClass(state: string): string {
+		if (state === '制作中') { return 'badge-cut' }
+		if (state === '可取餐') { return 'badge-ready' }
+		if (state === '已收档') { return 'badge-closed' }
+		return 'badge-live'
+	}
+
+	function parseMealBlock(meals: UTSJSONObject, key: string, title: string, bj: Date): MealBlock {
 		const lines: DishLine[] = []
-		const arr = data.getArray('dishLines')
-		if (arr !== null) {
-			for (let i = 0; i < arr.length; i++) {
-				const o = arr[i]
-				if (o instanceof UTSJSONObject) {
-					lines.push({ name: o.getString('name') ?? '', qty: Math.floor(o.getNumber('qty') ?? 0), amount: o.getNumber('amount') ?? 0 })
+		let gmv = 0
+		let extra = 0
+		let count = 0
+		let cutoff = false
+		const meal = meals.getJSON(key)
+		if (meal instanceof UTSJSONObject) {
+			cutoff = meal.getBoolean('cutoffPassed') === true
+			gmv = meal.getNumber('totalGmv') ?? 0
+			extra = meal.getNumber('customExtra') ?? 0
+			count = Math.floor(meal.getNumber('orderCount') ?? 0)
+			const arr = meal.getArray('dishLines')
+			if (arr !== null) {
+				for (let i = 0; i < arr.length; i++) {
+					const o = arr[i]
+					if (o instanceof UTSJSONObject) {
+						lines.push({ name: o.getString('name') ?? '', qty: Math.floor(o.getNumber('qty') ?? 0), amount: o.getNumber('amount') ?? 0 })
+					}
 				}
 			}
 		}
-		dishLines.value = lines
+		const state = mealStateOf(cutoff, key, bj)
+		return { key: key, title: title, state: state, stateCls: mealStateClass(state), lines: lines, orderCount: count, gmv: gmv, customExtra: extra }
+	}
+
+	function applySummary(result: UTSJSONObject) {
+		const data = result.getJSON('data')
+		if (!(data instanceof UTSJSONObject)) { toast('数据格式异常'); return }
+		const meals = data.getJSON('meals')
+		if (!(meals instanceof UTSJSONObject)) { toast('数据格式异常'); return }
+		sumDate.value = data.getString('date') ?? ''
+		const bj = bjNow()
+		const blocks: MealBlock[] = []
+		blocks.push(parseMealBlock(meals, 'lunch', '午餐', bj))
+		blocks.push(parseMealBlock(meals, 'dinner', '晚餐', bj))
+		mealBlocks.value = blocks
 		const list: AdminOrder[] = []
 		const arr2 = data.getArray('orders')
 		if (arr2 !== null) {
@@ -275,7 +324,9 @@ initPrinter(toast)
 							}
 						}
 					}
-					list.push({ no: o.getString('orderNo') ?? '', status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, note: note, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
+					let meal = o.getString('meal') ?? 'lunch' // 老订单可能没有 meal 字段，按午餐处理
+					if (meal !== 'dinner') { meal = 'lunch' }
+					list.push({ no: o.getString('orderNo') ?? '', meal: meal, status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, note: note, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
 				}
 			}
 		}
@@ -645,6 +696,8 @@ initPrinter(toast)
 	.sum-badge { border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
 	.badge-cut { background-color: #1C1917; color: #FDBA74; }
 	.badge-live { background-color: #FDF1E8; color: #C2410C; }
+	.badge-ready { background-color: #E8F6EC; color: #2E7D32; }
+	.badge-closed { background-color: #EDEAE3; color: #79716B; }
 	.line { display: flex; flex-direction: row; align-items: center; padding: 9px 0; border-bottom: 1px dashed #E7E3DA; }
 	.line-name { flex: 1; font-size: 14px; font-weight: 600; color: #44403C; }
 	.line-qty { font-family: monospace; font-size: 13px; color: #79716B; }
@@ -652,12 +705,19 @@ initPrinter(toast)
 	.sum-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-top: 10px; }
 	.sum-meta { font-size: 12px; color: #79716B; }
 	.sum-total { font-family: monospace; font-size: 16px; font-weight: 800; color: #C2410C; }
+	.meal-block { margin-top: 12px; }
+	.meal-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px dashed #E7E3DA; }
+	.meal-title { font-size: 15px; font-weight: 800; letter-spacing: .06em; }
 	.sec-title { display: block; color: #8A8F82; font-size: 11px; font-weight: 700; letter-spacing: .2em; margin: 18px 2px 8px; }
 	/* ---------- 订单卡 ---------- */
 	.order-card { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 13px 14px; margin-bottom: 12px; box-shadow: 0 6px 14px rgba(28,25,23,.05); }
 	.order-cancel { opacity: .55; }
 	.oc-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
 	.oc-no { font-family: monospace; font-size: 13px; font-weight: 800; letter-spacing: .04em; }
+	.oc-no-row { display: flex; flex-direction: row; align-items: center; }
+	.oc-meal { border-radius: 7px; padding: 2px 8px; font-size: 10.5px; font-weight: 700; margin-left: 8px; }
+	.meal-lunch { background-color: #FDF1E8; color: #C2410C; }
+	.meal-dinner { background-color: #1C1917; color: #FDBA74; }
 	.oc-status { border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
 	.st-pending { background-color: #FDF1E8; color: #C2410C; }
 	.st-cooking { background-color: #1C1917; color: #FDBA74; }

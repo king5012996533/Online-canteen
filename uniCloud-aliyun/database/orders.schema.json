@@ -11,11 +11,15 @@
     },
     "order_no": {
       "bsonType": "string",
-      "description": "订单号 FJ-MMDD-NNN"
+      "description": "订单号 FJ-MMDD-L001（午餐）/ FJ-MMDD-D001（晚餐）"
     },
     "menu_date": {
       "bsonType": "string",
       "description": "菜单日期 YYYY-MM-DD（北京时间）"
+    },
+    "meal": {
+      "bsonType": "string",
+      "description": "餐次：lunch / dinner（老数据无此字段视为 lunch）"
     },
     "status": {
       "bsonType": "string",
@@ -23,7 +27,7 @@
     },
     "items": {
       "bsonType": "array",
-      "description": "菜品行 [{id, name(下单时快照), pay, qty}]"
+      "description": "菜品行 [{id, name(下单时快照), pay, qty}]（餐次在订单级 meal 字段，行内不含）"
     },
     "total": {
       "bsonType": "number",

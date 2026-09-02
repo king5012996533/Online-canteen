@@ -6,8 +6,6 @@
  * 需要数据库的通用函数（如 nextSeq）由调用方把 db / dbCmd 通过参数传入。
  */
 
-const { CUTOFF_HOUR } = require('./config.js');
-
 // ---------- 响应包装 ----------
 
 function ok(data) {
@@ -32,10 +30,16 @@ function bjDateStr(d) {
 		String(d.getUTCDate()).padStart(2, '0');
 }
 
-// 某个北京日期当天截单时刻（11:00）的 epoch 毫秒；北京 11:00 = UTC 时间减 8 小时
-function cutoffTsOf(dateStr) {
+// 某个北京日期当天指定时刻（'HH:MM'，24 小时制）的 epoch 毫秒；北京时刻 = UTC 时刻减 8 小时
+function tsOfHM(dateStr, hm) {
 	const p = dateStr.split('-');
-	return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), CUTOFF_HOUR, 0, 0) - 480 * 60000;
+	const hmP = hm.split(':');
+	return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), Number(hmP[0]), Number(hmP[1]), 0) - 480 * 60000;
+}
+
+// 兼容包装：当天 11:00 截单时刻（截单时刻已由 config.MEALS 各餐 orderClose 取代）
+function cutoffTsOf(dateStr) {
+	return tsOfHM(dateStr, '11:00');
 }
 
 function pad2(n) {
@@ -62,8 +66,9 @@ async function nextSeq(db, dbCmd, key) {
 		try {
 			const upd = await col.where({ key: key }).update({ count: dbCmd.inc(1) });
 			if (!upd.updated) {
-				// 记录不存在，尝试初始化；若与其他请求冲突，交给下一轮重试（下一轮 inc 即可成功）
-				await col.doc(key).set({ key: key, count: 1 });
+				// 记录不存在，初始化为 0；若与其他请求冲突，交给下一轮重试（下一轮 inc 即可成功）
+				// 注意必须初始化为 0：continue 后下一轮会先 inc(1)，初始化 1 会导致首单序号变成 2
+				await col.doc(key).set({ key: key, count: 0 });
 				continue;
 			}
 			const read = await col.where({ key: key }).limit(1).get();
@@ -84,6 +89,7 @@ module.exports = {
 	bjNow: bjNow,
 	bjDateStr: bjDateStr,
 	cutoffTsOf: cutoffTsOf,
+	tsOfHM: tsOfHM,
 	pad2: pad2,
 	pad3: pad3,
 	round2: round2,

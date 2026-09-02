@@ -147,6 +147,7 @@ async function userMyOrders(p) {
 	const orders = (res.data || []).map(function (o) {
 		return {
 			orderNo: o.order_no,
+			meal: o.meal || 'lunch',
 			status: o.status,
 			total: o.total,
 			items: o.items || [],

@@ -8,7 +8,12 @@
 const ADMIN_PASSWORD = 'xk2026'; // 上线前务必修改！
 const MIN_ORDER_TOTAL = 16;  // 起送金额（元）
 const MAX_QTY_PER_ITEM = 20; // 单个菜品最大数量
-const CUTOFF_HOUR = 11;      // 北京时间截单时刻：11:00
+// 一天两餐（同一份日菜单）：各餐次备菜 / 截单 / 出炉 / 收档时刻；seq 为订单号里的餐次字母
+const MEALS = {
+	lunch: { key: 'lunch', label: '午餐', seq: 'L', prep: '10:00', orderClose: '11:00', ready: '11:30', close: '13:00' },
+	dinner: { key: 'dinner', label: '晚餐', seq: 'D', prep: '15:00', orderClose: '16:00', ready: '17:30', close: '19:30' }
+};
+const CUTOFF_HOUR = 11;      // 【已由 MEALS.lunch.orderClose 取代】仅保留导出兼容旧引用，新代码勿用
 // 【测试开关】true = 暂时解除截单限制，随时可下测试单（订单会带 test_order:true 标记）。
 // 正式上线前必须改回 false 并重新上传部署！
 const BYPASS_CUTOFF = true;
@@ -30,6 +35,7 @@ module.exports = {
 	ADMIN_PASSWORD: ADMIN_PASSWORD,
 	MIN_ORDER_TOTAL: MIN_ORDER_TOTAL,
 	MAX_QTY_PER_ITEM: MAX_QTY_PER_ITEM,
+	MEALS: MEALS,
 	CUTOFF_HOUR: CUTOFF_HOUR,
 	BYPASS_CUTOFF: BYPASS_CUTOFF,
 	IMG_API_BASE: IMG_API_BASE,

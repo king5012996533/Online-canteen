@@ -4,8 +4,8 @@
  * action: create / getTodayOrders / updateStatus
  */
 
-const { BYPASS_CUTOFF, MIN_ORDER_TOTAL, MAX_QTY_PER_ITEM } = require('./config.js');
-const { ok, fail, bjNow, bjDateStr, cutoffTsOf, pad2, pad3, round2, nextSeq } = require('./util.js');
+const { BYPASS_CUTOFF, MIN_ORDER_TOTAL, MAX_QTY_PER_ITEM, MEALS } = require('./config.js');
+const { ok, fail, bjNow, bjDateStr, tsOfHM, pad2, pad3, round2, nextSeq } = require('./util.js');
 
 // action='create'：入参 items=[{id,qty,pay}]、customer={name,location,phone,note}
 // 服务端逐项校验，绝不信任客户端。
@@ -16,9 +16,15 @@ async function orderCreate(event) {
 	const bj = bjNow();
 	const today = bjDateStr(bj);
 
-	// 1. 截单校验：北京时间当前 >= 当天 11:00 拒单（BYPASS_CUTOFF=true 时跳过，仅用于联调测试）
-	if (!BYPASS_CUTOFF && Date.now() >= cutoffTsOf(today)) {
-		return fail('今日已截单，明天上午再来');
+	// 0. 餐次校验：一单一餐，meal 必填且只能是 lunch / dinner
+	const meal = event.meal;
+	if (!MEALS[meal]) {
+		return fail('请选择午餐或晚餐');
+	}
+
+	// 1. 截单校验：北京时间当前 >= 当天该餐次截单时刻拒单（BYPASS_CUTOFF=true 时全局跳过，仅用于联调测试）
+	if (!BYPASS_CUTOFF && Date.now() >= tsOfHM(today, MEALS[meal].orderClose)) {
+		return fail('今日' + MEALS[meal].label + '已截单');
 	}
 
 	// 2. items 校验
@@ -78,11 +84,11 @@ async function orderCreate(event) {
 		return fail('请填写姓名和部门 / 楼层');
 	}
 
-	// 5. 生成订单号：'FJ-' + MMDD + '-' + pad3(当日序号)，counters key = 'order_' + YYYYMMDD
+	// 5. 生成订单号：'FJ-' + MMDD + '-' + 餐次字母 + pad3(当日该餐次序号)，counters key = 'order_' + 餐次字母 + '_' + YYYYMMDD
 	const ymd = bj.getUTCFullYear() + pad2(bj.getUTCMonth() + 1) + pad2(bj.getUTCDate());
 	const mmdd = ymd.slice(4);
-	const seq = await nextSeq(db, dbCmd, 'order_' + ymd);
-	const orderNo = 'FJ-' + mmdd + '-' + pad3(seq);
+	const seqN = await nextSeq(db, dbCmd, 'order_' + MEALS[meal].seq + '_' + ymd);
+	const orderNo = 'FJ-' + mmdd + '-' + MEALS[meal].seq + pad3(seqN);
 
 	// 关联下单用户：前端 http 层自动注入 token，按 token 反查 users；
 	// 查得到取 users._id 作 uid，查不到 / 未登录不拦截下单，uid 存空串（兼容老流程）
@@ -105,6 +111,7 @@ async function orderCreate(event) {
 	await db.collection('orders').add({
 		order_no: orderNo,
 		menu_date: today,
+		meal: meal,
 		status: 'pending',
 		items: orderItems,
 		total: total,
@@ -137,8 +144,10 @@ async function orderCreate(event) {
 }
 
 // 按日期汇总（order getTodayOrders 与 admin summary 共用）
-// date 形如 '2026-08-29'。orders 返回全部（含 canceled，状态由前端显示）；
-// dishLines / totalGmv / customExtra / orderCount 排除 canceled。
+// date 形如 '2026-08-29'。meals 按餐次（lunch/dinner）分别聚合：dishLines / totalGmv /
+// customExtra / orderCount 排除 canceled，cutoffPassed 按各餐 orderClose 判；
+// orders 返回全部（含 canceled，状态由前端显示），按 created_at desc。
+// 老订单可能没有 meal 字段，统一归入 lunch。
 async function buildDaySummary(db, date) {
 	const res = await db.collection('orders')
 		.where({ menu_date: date })
@@ -148,40 +157,59 @@ async function buildDaySummary(db, date) {
 	const all = res.data || [];
 	const active = all.filter(function (o) { return o.status !== 'canceled'; });
 
-	const lineMap = {};
-	let totalGmv = 0;
-	let customExtra = 0;
+	// 老订单无 meal 字段视为午餐；非法值同样兜底到 lunch
+	const mealOf = function (o) {
+		return MEALS[o.meal] ? o.meal : 'lunch';
+	};
+
+	const mealKeys = Object.keys(MEALS);
+	const meals = {};
+	mealKeys.forEach(function (key) {
+		meals[key] = {
+			cutoffPassed: Date.now() >= tsOfHM(date, MEALS[key].orderClose),
+			dishLines: [],
+			totalGmv: 0,
+			customExtra: 0,
+			orderCount: 0
+		};
+	});
+
+	const lineMaps = {};
 	active.forEach(function (o) {
-		totalGmv += o.total || 0;
-		customExtra += o.custom_extra || 0;
+		const mk = mealOf(o);
+		meals[mk].totalGmv += o.total || 0;
+		meals[mk].customExtra += o.custom_extra || 0;
+		meals[mk].orderCount += 1;
+		if (!lineMaps[mk]) lineMaps[mk] = {};
+		const lineMap = lineMaps[mk];
 		(o.items || []).forEach(function (it) {
-			const key = it.name;
-			if (!lineMap[key]) lineMap[key] = { name: it.name, qty: 0, amount: 0 };
-			lineMap[key].qty += it.qty || 0;
-			lineMap[key].amount += (it.pay || 0) * (it.qty || 0);
+			if (!lineMap[it.name]) lineMap[it.name] = { name: it.name, qty: 0, amount: 0 };
+			lineMap[it.name].qty += it.qty || 0;
+			lineMap[it.name].amount += (it.pay || 0) * (it.qty || 0);
 		});
 	});
 
-	const dishLines = Object.keys(lineMap)
-		.map(function (k) {
-			return {
-				name: lineMap[k].name,
-				qty: lineMap[k].qty,
-				amount: round2(lineMap[k].amount)
-			};
-		})
-		.sort(function (a, b) { return b.amount - a.amount; }); // 按金额降序
+	mealKeys.forEach(function (mk) {
+		meals[mk].totalGmv = round2(meals[mk].totalGmv);
+		meals[mk].customExtra = round2(meals[mk].customExtra);
+		meals[mk].dishLines = Object.keys(lineMaps[mk] || {})
+			.map(function (k) {
+				return {
+					name: lineMaps[mk][k].name,
+					qty: lineMaps[mk][k].qty,
+					amount: round2(lineMaps[mk][k].amount)
+				};
+			})
+			.sort(function (a, b) { return b.amount - a.amount; }); // 按金额降序
+	});
 
 	return {
 		date: date,
-		cutoffPassed: Date.now() >= cutoffTsOf(date),
-		dishLines: dishLines,
-		totalGmv: round2(totalGmv),
-		customExtra: round2(customExtra),
-		orderCount: active.length,
+		meals: meals,
 		orders: all.map(function (o) {
 			return {
 				orderNo: o.order_no,
+				meal: mealOf(o),
 				status: o.status,
 				total: o.total,
 				customer: o.customer || { name: '', location: '', phone: '', note: '' },
