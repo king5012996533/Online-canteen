@@ -1,61 +1,60 @@
 <template>
 	<view class="page">
-		<!-- 页头 -->
-		<view class="head">
-			<text class="g-cap">FUJI 线上饭堂</text>
-			<text class="g-title head-title">我的</text>
-		</view>
-
-		<!-- 登录态：仅展示自动登录状态，不做描边卡片 -->
-		<view class="login-row">
+		<!-- 用户卡：头像 + 名称 + 配送地点 -->
+		<view class="card user-card">
 			<view class="avatar"><text class="avatar-char">微</text></view>
-			<view class="login-main">
-				<text v-if="loginOk" class="login-title">微信用户 · 已自动登录</text>
-				<text v-else-if="loginChecking" class="login-title">正在登录…</text>
-				<text v-else class="login-title">未登录</text>
+			<view class="user-main">
+				<text class="user-name">{{userDisplayName}}</text>
+				<text class="user-sub">{{userSubLine}}</text>
 				<text v-if="!loginOk && !loginChecking && loginErr !== ''" class="login-err">{{loginErr}}</text>
 			</view>
 			<button v-if="!loginOk && !loginChecking" class="g-btn-ghost relogin" @click="manualLogin">重新登录</button>
 		</view>
 
-		<!-- 常用信息：保存后点单页自动回填 -->
-		<view class="section">
-			<text class="g-cap">常用信息 · 配送与联系</text>
-			<view class="g-hairline sec-line"></view>
+		<!-- 菜单卡：图标行 -->
+		<view class="card menu-card">
+			<view class="menu-row" @click="goOrders">
+				<image class="row-ic" src="/static/tab/orders.png" mode="aspectFit"></image>
+				<text class="row-text">我的订单</text>
+				<text class="row-arr">›</text>
+			</view>
+			<view class="menu-row" @click="toggleEdit">
+				<image class="row-ic" src="/static/icons/pin.png" mode="aspectFit"></image>
+				<text class="row-text">配送地址</text>
+				<text class="row-val">{{form.location || '未填写'}}</text>
+				<text class="row-arr">›</text>
+			</view>
+			<view class="menu-row" @click="toggleEdit">
+				<image class="row-ic" src="/static/icons/phone.png" mode="aspectFit"></image>
+				<text class="row-text">联系电话</text>
+				<text class="row-val">{{form.phone || '未填写'}}</text>
+				<text class="row-arr">›</text>
+			</view>
+			<view class="menu-row" @click="feedbackTip">
+				<image class="row-ic" src="/static/icons/chat.png" mode="aspectFit"></image>
+				<text class="row-text">意见反馈</text>
+				<text class="row-arr">›</text>
+			</view>
+			<view class="menu-row" @click="aboutTip">
+				<image class="row-ic" src="/static/icons/info.png" mode="aspectFit"></image>
+				<text class="row-text">关于我们</text>
+				<text class="row-arr">›</text>
+			</view>
+		</view>
+
+		<!-- 编辑卡：点地址/电话行展开 -->
+		<view v-if="editing" class="card edit-card">
+			<text class="g-cap edit-cap">常用信息 · 配送与联系</text>
+			<view class="g-hairline edit-line"></view>
 			<view class="form-field"><view class="form-label-row"><text class="g-label">姓名</text><text class="g-req">*</text></view><input class="g-field-input" v-model="form.name" placeholder="如：张三 / 3 楼财务" placeholder-class="g-ph" /></view>
 			<view class="form-field"><view class="form-label-row"><text class="g-label">联系电话（选填）</text></view><input class="g-field-input" v-model="form.phone" type="number" placeholder="138 0000 0000" placeholder-class="g-ph" /></view>
 			<view class="form-field"><view class="form-label-row"><text class="g-label">常用配送地点（选填）</text></view><input class="g-field-input" v-model="form.location" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" /></view>
 			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveProfile">{{saving ? '保存中…' : '保存'}}</button>
 		</view>
 
-		<!-- 我的订单 -->
-		<view class="section">
-			<text class="g-cap">我的订单</text>
-			<view class="g-hairline sec-line"></view>
-			<text v-if="ordersLoading && loginOk" class="g-sub order-empty">正在加载订单…</text>
-			<text v-else-if="orders.length === 0" class="g-sub order-empty">{{loginOk ? '还没有订单' : '登录后即可查看订单'}}</text>
-			<view v-else>
-				<view v-for="(order, idx) in orders" :key="order.orderNo">
-					<view v-if="idx > 0" class="g-hairline order-sep"></view>
-					<view class="order-item">
-						<view class="order-head">
-							<text class="order-no">{{order.orderNo}}</text>
-							<text class="st-badge" :class="statusClass(order.status)">{{statusText(order.status)}}</text>
-						</view>
-						<view v-for="(item, itemIdx) in order.items" :key="itemIdx" class="order-line">
-							<text class="order-line-name">{{item.name}} × {{item.qty}}</text>
-							<text class="order-line-price">¥{{item.pay * item.qty}}</text>
-						</view>
-						<view class="order-foot">
-							<text class="order-time">{{fmtTime(order.createdAt)}}</text>
-							<view class="order-total-row"><text class="order-total-label">合计</text><text class="g-price order-total-num">¥{{order.total}}</text></view>
-						</view>
-					</view>
-				</view>
-			</view>
-		</view>
+		<!-- 退出登录 -->
+		<view class="card out-card" @click="logoutTip"><text class="out-text">退出登录</text></view>
 
-		<text class="g-cap foot-note">在线支付即将上线</text>
 		<view v-if="toastMessage !== ''" class="g-toast"><text class="toast-text">{{toastMessage}}</text></view>
 	</view>
 </template>
@@ -75,6 +74,8 @@
 	const orders = ref<MyOrder[]>([])
 	const ordersLoading = ref(true)
 	const toastMessage = ref('')
+	// 编辑态：点「配送地址/联系电话」行展开常用信息编辑卡
+	const editing = ref(false)
 
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
 	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
@@ -86,6 +87,27 @@
 	// 状态文案：4.0 配送语义（ready=配送中），delivered 为云端新增状态
 	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '待处理' }
 	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready' || s === 'delivered') return 'st-ready'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+
+	// 用户卡文案
+	const userDisplayName = computed((): string => {
+		if (loginChecking.value) return '正在登录…'
+		if (!loginOk.value) return '未登录'
+		const name = customerName()
+		return name === '' ? '微信用户' : name
+	})
+	const userSubLine = computed((): string => {
+		if (!loginOk.value) return '富记线上饭堂 · 写字楼现炒午餐'
+		const loc = customerLocation()
+		return loc === '' ? 'XX大厦 / 公司前台' : loc
+	})
+	function customerName(): string { return customer.name }
+	function customerLocation(): string { return customer.location }
+
+	function toggleEdit() { editing.value = !editing.value }
+	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }
+	function feedbackTip() { toast('感谢反馈，请联系饭堂微信群') }
+	function aboutTip() { toast('富记线上饭堂 · 写字楼现炒午餐') }
+	function logoutTip() { toast('使用微信静默登录，无需手动退出') }
 
 	// uni.login 回调转 Promise：拿微信登录 code（拿不到返回空串）
 	function getWxCode(): Promise<string> {
@@ -276,46 +298,34 @@
 
 <style>
 	.page { background-color: #F6F3EB; padding: 20px 20px 36px; }
-	/* ---------- 页头 ---------- */
-	.head { margin-top: 12px; margin-bottom: 4px; }
-	.head-title { display: block; margin-top: 6px; }
-	/* ---------- 登录态 ---------- */
-	.login-row { display: flex; flex-direction: row; align-items: center; margin-top: 20px; }
-	.avatar { width: 46px; height: 46px; border-radius: 14px; background-color: #2F6B3F; display: flex; align-items: center; justify-content: center; }
-	.avatar-char { color: #FFFFFF; font-size: 22px; font-weight: 900; }
-	.login-main { flex: 1; margin-left: 12px; }
-	.login-title { display: block; font-size: 15px; font-weight: 700; color: #22301F; }
-	.login-err { display: block; color: #C8862A; font-size: 11.5px; margin-top: 4px; }
-	/* 重新登录：在 g-btn-ghost 基础上压小尺寸 */
-	.relogin { width: 96px; height: 38px; font-size: 12.5px; margin-left: 12px; }
-	/* ---------- 区块标题 ---------- */
-	.section { margin-top: 24px; }
-	.sec-line { margin-top: 8px; }
-	/* ---------- 常用信息 ---------- */
+	.card { background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E7E3D6; }
+	/* ---------- 用户卡 ---------- */
+	.user-card { display: flex; flex-direction: row; align-items: center; padding: 16px 14px; margin-top: 8px; }
+	.avatar { width: 52px; height: 52px; border-radius: 26px; background-color: #E9F1E7; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+	.avatar-char { color: #2F6B3F; font-size: 20px; font-weight: 900; }
+	.user-main { flex: 1; min-width: 0; margin-left: 12px; }
+	.user-name { display: block; font-size: 17px; font-weight: 900; color: #22301F; }
+	.user-sub { display: block; font-size: 11.5px; color: #8C9689; margin-top: 4px; }
+	.login-err { display: block; color: #C8862A; font-size: 11px; margin-top: 4px; }
+	.relogin { width: 96px; height: 38px; font-size: 12.5px; margin-left: 12px; flex-shrink: 0; }
+	/* ---------- 菜单卡 ---------- */
+	.menu-card { margin-top: 14px; padding: 2px 14px; }
+	.menu-row { display: flex; flex-direction: row; align-items: center; padding: 13px 0; border-bottom: 1px solid #E7E3D6; }
+	.menu-row:last-child { border-bottom: 0; }
+	.row-ic { width: 20px; height: 20px; margin-right: 11px; flex-shrink: 0; }
+	.row-text { font-size: 13.5px; font-weight: 600; color: #22301F; }
+	.row-val { margin-left: auto; font-size: 11.5px; color: #8C9689; font-weight: 600; }
+	.row-arr { margin-left: 8px; color: #C4CCBF; font-size: 15px; }
+	/* ---------- 编辑卡 ---------- */
+	.edit-card { margin-top: 14px; padding: 14px; }
+	.edit-cap { display: block; margin-bottom: 4px; }
+	.edit-line { margin-bottom: 6px; }
 	.form-field { margin-top: 12px; }
 	.form-label-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
 	.save-btn { width: 100%; border: 0; margin-top: 16px; }
-	/* ---------- 我的订单 ---------- */
-	.order-empty { display: block; text-align: center; padding: 14px 0 4px; }
-	.order-sep { margin-top: 14px; }
-	.order-item { padding-top: 12px; }
-	.order-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
-	.order-no { font-size: 12px; font-weight: 700; color: #22301F; }
-	/* 状态徽章四态外观：白描 / 浅绿 / 绿实 / 雾灰 */
-	.st-badge { border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 600; }
-	.st-pending { background-color: #FFFFFF; color: #22301F; border: 1px solid #E7E3D6; }
-	.st-cooking { background-color: #E9F1E7; color: #24522F; }
-	.st-ready { background-color: #2F6B3F; color: #FFFFFF; font-weight: 700; }
-	.st-cancel { background-color: #F3F7F1; color: #8C9689; }
-	.order-line { display: flex; flex-direction: row; justify-content: space-between; padding: 7px 0; }
-	.order-line-name { font-size: 13px; color: #22301F; }
-	.order-line-price { font-size: 13px; font-weight: 800; color: #22301F; }
-	.order-foot { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding-top: 8px; }
-	.order-time { font-size: 11px; color: #8C9689; }
-	.order-total-row { display: flex; flex-direction: row; align-items: baseline; }
-	.order-total-label { font-size: 12px; color: #8C9689; margin-right: 6px; }
-	.order-total-num { font-size: 15px; }
-	/* ---------- 页脚 / 提示 ---------- */
-	.foot-note { display: block; text-align: center; margin-top: 18px; }
+	/* ---------- 退出登录 ---------- */
+	.out-card { margin-top: 18px; padding: 13px; display: flex; align-items: center; justify-content: center; }
+	.out-text { font-size: 13px; font-weight: 700; color: #8C9689; }
+	/* ---------- 轻提示 ---------- */
 	.toast-text { color: #FFFFFF; font-size: 13px; text-align: center; }
 </style>
