@@ -34,6 +34,7 @@ const { menuGetToday } = require('./lib/menu.js');
 const { orderHandle } = require('./lib/order.js');
 const { adminHandle } = require('./lib/admin.js');
 const { userHandle } = require('./lib/user.js');
+const { payHandle } = require('./lib/pay.js');
 
 // ---------- HTTP URL 化支持 ----------
 
@@ -121,6 +122,8 @@ exports.main = async function (event, context) {
 			payload = await adminHandle(p, clientIP); // 口令错误也返回 200，错误信息放在 payload.err
 		} else if (mod === 'user') {
 			payload = await userHandle(p);
+		} else if (mod === 'pay') {
+			payload = await payHandle(p); // 微信支付：create/sync 用户端（token），notify 为微信回调
 		} else {
 			payload = fail('缺少 mod 参数（menu / order / admin）');
 		}

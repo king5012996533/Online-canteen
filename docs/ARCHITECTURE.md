@@ -92,6 +92,15 @@ pending(已下单) → cooking(备餐中) → ready(待配送) → delivering(�
 
 安全机制：机密全在 `lib/secrets.js`（不入库）；生图下载走 SSRF 防护（https + 内网段/裸 IP 拦截 + 20MB 上限）；管理端批量操作有防重入锁。
 
+## 4.5 微信支付 V3（已接代码，待商户侧配置）
+
+- **下单**：`mod=pay action=create`（用户端，token 鉴权 + 订单归属校验）→ 构造 JSAPI 统一下单（WECHATPAY2-SHA256-RSA2048 签名，商户私钥 `lib/apiclient_key.pem` 不入库）→ 返回 `uni.requestPayment` 参数
+- **确认**：前端拉起支付成功后调 `action=sync` 主动查询微信订单（不依赖回调）并落库 `pay_status='paid'` + transaction_id
+- **回调**：`notify_url` 带 `?mod=pay`，APIv3 密钥 AES-256-GCM 解密 + 金额核对后落库（冗余通道）
+- **订单字段**：`pay_status: unpaid/paid`、`transaction_id`、`pay_time`；厨房端订单卡有「待支付」金棕徽章
+- **模拟支付**：饭盒支付屏保留「模拟支付（测试）」按钮，走流程不扣款，供测试对照
+- 前置（商户侧）：AppID 关联、API 证书（apiclient_key.pem + 序列号）、APIv3 密钥，填入 `lib/secrets.js` 即生效
+
 ## 5. 前端架构
 
 - **4 Tab**：index（今日菜单，内含 home/menu/dish 三屏态）· box（我的饭盒，list/confirm/pay/success 四屏态）· orders（列表/status 时间线两屏态）· profile

@@ -159,6 +159,7 @@ async function userMyOrders(p) {
 			meal: o.meal || 'lunch',
 			status: o.status,
 			statusLog: o.status_log || {},
+			payStatus: o.pay_status || 'unpaid',
 			total: o.total,
 			items: o.items || [],
 			createdAt: o.created_at

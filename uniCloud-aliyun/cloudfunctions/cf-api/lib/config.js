@@ -33,6 +33,11 @@ const WX_APPID = 'wx741ea5af08011b17';
 // 正式上线前建议清掉测试数据。
 const WX_APP_SECRET = SECRETS.WX_APP_SECRET;
 
+// ---------- 微信支付 V3（商户号关联新 AppID 后启用） ----------
+// 回调地址必须 https；微信服务器 POST 到这里（query 带 mod=pay 进路由）。
+// 证书未配好时回调不可达不影响支付——前端支付后走 paySync 主动查询兜底。
+const PAY_NOTIFY_URL = 'https://xk-api.xingtudesign.com/cf-api?mod=pay';
+
 module.exports = {
 	ADMIN_PASSWORD: ADMIN_PASSWORD,
 	MIN_ORDER_TOTAL: MIN_ORDER_TOTAL,
@@ -43,5 +48,6 @@ module.exports = {
 	IMG_API_KEY: IMG_API_KEY,
 	IMG_MODEL: IMG_MODEL,
 	WX_APPID: WX_APPID,
-	WX_APP_SECRET: WX_APP_SECRET
+	WX_APP_SECRET: WX_APP_SECRET,
+	PAY_NOTIFY_URL: PAY_NOTIFY_URL
 };

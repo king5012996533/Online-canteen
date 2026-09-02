@@ -128,6 +128,7 @@ async function orderCreate(event) {
 		customer: { name: name, location: location, phone: phone, note: note },
 		uid: uid,
 		request_id: requestId,
+		pay_status: 'unpaid',
 		test_order: BYPASS_CUTOFF === true,
 		created_at: Date.now()
 	});
@@ -222,6 +223,7 @@ async function buildDaySummary(db, date) {
 				meal: mealOf(o),
 				status: o.status,
 				status_log: o.status_log || {},
+				pay_status: o.pay_status || 'unpaid',
 				total: o.total,
 				customer: o.customer || { name: '', location: '', phone: '', note: '' },
 				items: (o.items || []).map(function (it) {

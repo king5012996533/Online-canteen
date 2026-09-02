@@ -5,6 +5,7 @@ node_modules/
 
 # 机密配置（口令/密钥），模板见 secrets.example.js
 secrets.js
+apiclient_key.pem
 
 # 本地备份文件
 *.bak

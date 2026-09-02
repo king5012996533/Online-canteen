@@ -57,15 +57,17 @@
 				</view>
 			</view>
 
-			<!-- 屏3 模拟支付（测试环境）：商户号下来后换成 wx.requestPayment -->
+			<!-- 屏3 支付：微信支付（真实扣款）+ 模拟支付（测试期备用） -->
 			<view v-else-if="screen === 'pay'" class="content">
 				<view class="card pay-card">
 					<view class="pay-merchant"><view class="pay-avatar"><text class="pay-avatar-char">富</text></view><text class="pay-name">富记线上饭堂</text></view>
-					<text class="pay-amount">¥{{total}}</text>
-					<text class="pay-mode">微信支付 · 模拟环境 · {{mealLabel}}</text>
+					<text class="pay-amount">¥{{orderTotal}}</text>
+					<text class="pay-order">NO.{{orderNo}}</text>
+					<text class="pay-mode">微信支付 · {{mealLabel}}</text>
 				</view>
-				<view class="notice"><text class="notice-text">当前为测试模式：此步不产生真实扣款。微信支付商户号开通后，这里会替换为真正的微信支付。</text></view>
-				<button class="g-btn-primary cta" :disabled="submitting" @click="confirmOrder">{{submitting ? '支付中…' : '确认支付'}}</button>
+				<view class="notice"><text class="notice-text">测试期说明：「微信支付」为真实扣款（建议小额测试）；「模拟支付」不产生扣款，仅走通流程。</text></view>
+				<button class="g-btn-primary cta" :disabled="paying" @click="payReal">{{paying ? '支付中…' : '微信支付'}}</button>
+				<button class="g-btn-ghost cta cta-gap" @click="mockPay">模拟支付（测试）</button>
 				<button class="g-btn-ghost cta cta-gap" @click="screen = 'confirm'">返回修改订单</button>
 			</view>
 
@@ -135,6 +137,7 @@
 	const orderNo = ref('')
 	const orderTotal = ref(0)
 	const orderLines = ref<SnapshotLine[]>([])
+	const paying = ref(false)
 
 	const totalCount = computed((): number => cartCount())
 	const total = computed((): number => cartTotal())
@@ -165,9 +168,9 @@
 	}
 	function goPay() {
 		if (customer.name.trim() === '' || customer.location.trim() === '') { toast('请填写姓名和配送地点'); return }
-		screen.value = 'pay'
+		confirmOrder()
 	}
-	// 确认支付：创建订单 → 快照小票 → 清空饭盒 → 成功屏
+	// 确认下单：创建订单（待支付）→ 快照小票 → 清空饭盒 → 支付屏
 	async function confirmOrder() {
 		if (submitting.value) return
 		const items: OrderLine[] = []
@@ -184,10 +187,50 @@
 				orderLines.value = lines
 				orderTotal.value = total.value
 				cartClear()
-				screen.value = 'success'
+				screen.value = 'pay'
 			} else { toast(result !== null ? (result.getString('err') ?? '下单失败，请重试') : '网络异常，请稍后再试') }
 		} catch (e) { toast('网络异常，请稍后再试') }
 		submitting.value = false
+	}
+	// 微信支付：统一下单 → 拉起支付 → 主动查询确认（回调不可达时的兜底）
+	async function payReal() {
+		if (paying.value || orderNo.value === '') return
+		paying.value = true
+		try {
+			const pre = await requestJson('/cf-pay', { action: 'create', orderNo: orderNo.value } as UTSJSONObject)
+			if (pre === null) { paying.value = false; toast('网络异常，请稍后再试'); return }
+			if (pre.getBoolean('ok') !== true) {
+				paying.value = false
+				toast(pre.getString('err') ?? '支付未配置')
+				return
+			}
+			const d = pre.getJSON('data')
+			if (d !== null && d.getBoolean('paid') === true) { paying.value = false; screen.value = 'success'; return }
+			const ts = d?.getString('timeStamp') ?? ''
+			const n = d?.getString('nonceStr') ?? ''
+			const pkg = d?.getString('package') ?? ''
+			const sig = d?.getString('paySign') ?? ''
+			uni.requestPayment({
+				provider: 'wxpay',
+				orderInfo: { timeStamp: ts, nonceStr: n, package: pkg, signType: 'RSA', paySign: sig },
+				success: () => { payConfirmed() },
+				fail: () => { paying.value = false; toast('支付未完成，可重试或用模拟支付') }
+			})
+		} catch (e) { paying.value = false; toast('网络异常，请稍后再试') }
+	}
+	// 支付拉起成功后：主动查询微信侧结果并落库（不依赖回调）
+	async function payConfirmed() {
+		try {
+			const s = await requestJson('/cf-pay', { action: 'sync', orderNo: orderNo.value } as UTSJSONObject)
+			paying.value = false
+			if (s !== null && s.getBoolean('ok') === true) {
+				screen.value = 'success'
+			} else { toast('支付成功，结果确认中，可在订单页查看'); screen.value = 'success' }
+		} catch (e) { paying.value = false; toast('支付成功，结果确认中'); screen.value = 'success' }
+	}
+	// 模拟支付：测试期走通流程，不产生扣款、不改云端支付状态
+	function mockPay() {
+		screen.value = 'success'
 	}
 	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }
 
@@ -254,6 +297,7 @@
 	.pay-name { font-size: 15px; font-weight: 700; color: #22301F; margin-left: 9px; }
 	.pay-amount { font-size: 44px; font-weight: 800; color: #22301F; margin-top: 18px; }
 	.pay-mode { color: #8C9689; font-size: 12px; margin-top: 8px; }
+	.pay-order { display: block; font-size: 10.5px; color: #B9C0B4; margin-top: 8px; }
 	.notice { background-color: #E9F1E7; border-radius: 12px; padding: 10px 12px; margin-top: 14px; }
 	.notice-text { color: #24522F; font-size: 11.5px; line-height: 1.7; }
 	/* ---------- 屏4 成功 ---------- */

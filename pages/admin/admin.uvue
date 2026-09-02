@@ -83,6 +83,7 @@
 									<text class="go-no">{{o.no}}</text>
 									<text class="oc-meal" :class="o.meal === 'dinner' ? 'meal-dinner' : 'meal-lunch'">{{o.meal === 'dinner' ? '晚餐' : '午餐'}}</text>
 									<text class="oc-status go-status" :class="statusClass(o.status)">{{statusText(o.status)}}</text>
+									<text v-if="o.payStatus === 'unpaid'" class="pay-badge">待支付</text>
 									<view class="go-right">
 										<text class="go-time">{{fmtTime(o.createdAt)}}</text>
 										<text class="go-total">¥{{fmt2(o.total)}}</text>
@@ -431,7 +432,7 @@ initPrinter(toast)
 					const no = o.getString('orderNo') ?? ''
 					const slog = o.getJSON('status_log') // 云端 updateStatus 写入的各状态达成时间戳
 					if (slog instanceof UTSJSONObject) { logs.set(no, slog) }
-					list.push({ no: no, meal: meal, status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
+					list.push({ no: no, meal: meal, status: o.getString('status') ?? '', payStatus: o.getString('pay_status') ?? 'unpaid', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
 				}
 			}
 		}
@@ -1028,6 +1029,7 @@ initPrinter(toast)
 	.go-row1 { display: flex; flex-direction: row; align-items: center; }
 	.go-no { font-family: monospace; font-size: 12.5px; font-weight: 800; letter-spacing: .02em; color: #22301F; }
 	.go-status { margin-left: 8px; }
+	.pay-badge { margin-left: 6px; border: 1px solid #C8862A; color: #C8862A; font-size: 9px; font-weight: 700; border-radius: 5px; padding: 2px 6px; }
 	.go-right { display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; }
 	.go-time { font-family: monospace; font-size: 10.5px; color: #8C9689; }
 	.go-total { font-family: monospace; font-size: 14px; font-weight: 800; color: #2F6B3F; margin-top: 2px; }
