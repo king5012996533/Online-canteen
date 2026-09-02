@@ -1,0 +1,39 @@
+/**
+ * 餐次配置（前端镜像）：与 cf-api/lib/config.js 的 MEALS 保持一致，改两处要同步。
+ * 所有页面的餐次文案/时间都从这里取，禁止页面内散落硬编码。
+ */
+
+export class MealCfg {
+	key: string = ''
+	label: string = ''
+	prepMin: number = 0
+	orderCloseMin: number = 0
+	readyMin: number = 0
+	closeMin: number = 0
+	prepLabel: string = ''
+	orderCloseLabel: string = ''
+	readyLabel: string = ''
+	closeLabel: string = ''
+	// 配送时间窗文案（出炉 → 收档）
+	deliveryLabel: string = ''
+	// 建议送达时间文案（订单确认页用）
+	suggest: string = ''
+}
+
+export const MEAL_LUNCH = new MealCfg()
+MEAL_LUNCH.key = 'lunch'; MEAL_LUNCH.label = '午餐'; MEAL_LUNCH.prepMin = 600; MEAL_LUNCH.orderCloseMin = 660; MEAL_LUNCH.readyMin = 690; MEAL_LUNCH.closeMin = 780
+MEAL_LUNCH.prepLabel = '10:00'; MEAL_LUNCH.orderCloseLabel = '11:00'; MEAL_LUNCH.readyLabel = '11:30'; MEAL_LUNCH.closeLabel = '13:00'
+MEAL_LUNCH.deliveryLabel = '11:30-13:00'; MEAL_LUNCH.suggest = '12:40 前后'
+
+export const MEAL_DINNER = new MealCfg()
+MEAL_DINNER.key = 'dinner'; MEAL_DINNER.label = '晚餐'; MEAL_DINNER.prepMin = 900; MEAL_DINNER.orderCloseMin = 960; MEAL_DINNER.readyMin = 1050; MEAL_DINNER.closeMin = 1170
+MEAL_DINNER.prepLabel = '15:00'; MEAL_DINNER.orderCloseLabel = '16:00'; MEAL_DINNER.readyLabel = '17:30'; MEAL_DINNER.closeLabel = '19:30'
+MEAL_DINNER.deliveryLabel = '17:30-19:30'; MEAL_DINNER.suggest = '18:30 前后'
+
+export function cfgOf(key: string): MealCfg {
+	return key === 'dinner' ? MEAL_DINNER : MEAL_LUNCH
+}
+
+export function isMealKey(key: string): boolean {
+	return key === 'lunch' || key === 'dinner'
+}

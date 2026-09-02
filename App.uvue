@@ -41,10 +41,11 @@
 
 <style>
 	/* ============================================================
-	   富记线上饭堂 · 简洁白 3.0 全局设计系统（唯一来源）
-	   色板：纸白 #FFFFFF / 雾灰 #F6F6F4 / 墨黑 #141418
-	         石墨 #86868B / 发丝线 #ECECEB / 炉火橙 #FF4A17
-	   规则：炉火橙只用于 价格、结算行动、状态点徽章；
+	   富记线上饭堂 · UI 4.0 绿色系 全局设计系统（唯一来源）
+	   色板：森林绿 #2F6B3F / 深绿 #24522F / 墨绿 #1D4226
+	         浅绿底 #E9F1E7 / 浅绿2 #F3F7F1 / 米白 #F6F3EB
+	         墨字 #22301F / 灰绿 #8C9689 / 发丝线 #E7E3D6 / 金棕点缀 #C8862A
+	   规则：绿色用于 品牌行动/价格/达成状态；金棕只做小点缀；
 	         全站只用系统黑体，禁 serif / monospace / 渐变 / 大投影
 	   g- 前缀类供所有页面直接引用，页面私有样式写在各页 <style>
 	   ============================================================ */
@@ -61,26 +62,26 @@
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.24em;
-		color: #86868B;
+		color: #8C9689;
 	}
 
 	/* 次级说明文字 */
 	.g-sub {
 		font-size: 12px;
-		color: #86868B;
+		color: #8C9689;
 	}
 
 	/* 区块大标题 */
 	.g-title {
 		font-size: 20px;
 		font-weight: 900;
-		color: #141418;
+		color: #22301F;
 	}
 
-	/* 主按钮：墨黑胶囊 */
+	/* 主按钮：森林绿胶囊 */
 	.g-btn-primary {
 		height: 48px;
-		background-color: #141418;
+		background-color: #2F6B3F;
 		color: #FFFFFF;
 		font-size: 15px;
 		font-weight: 700;
@@ -91,7 +92,7 @@
 	}
 
 	.g-btn-primary[disabled] {
-		background-color: #ECECEB;
+		background-color: #E7E3D6;
 		color: #B9B9BE;
 	}
 
@@ -99,48 +100,48 @@
 	.g-btn-ghost {
 		height: 48px;
 		background-color: #FFFFFF;
-		color: #141418;
+		color: #22301F;
 		font-size: 15px;
 		font-weight: 600;
-		border: 1px solid #ECECEB;
+		border: 1px solid #E7E3D6;
 		border-radius: 999px;
 		margin: 0;
 		padding: 0;
 	}
 
-	/* 输入框：雾灰底无边框圆角 */
+	/* 输入框：浅绿底无边框圆角 */
 	.g-field-input {
 		width: 100%;
 		height: 46px;
 		box-sizing: border-box;
 		padding: 0 14px;
-		background-color: #F6F6F4;
+		background-color: #F3F7F1;
 		border: 0;
 		border-radius: 12px;
 		font-size: 14px;
-		color: #141418;
+		color: #22301F;
 	}
 
 	.g-ph {
-		color: #B9B9BE;
+		color: #B9C0B4;
 	}
 
 	/* 表单标签行 */
 	.g-label {
 		font-size: 12px;
 		font-weight: 700;
-		color: #141418;
+		color: #22301F;
 	}
 
 	.g-req {
-		color: #FF4A17;
+		color: #C8862A;
 		font-size: 12px;
 		margin-left: 3px;
 	}
 
-	/* 三态小标签：黑实 / 白描 / 雾灰 */
+	/* 三态小标签：绿实 / 白描 / 浅灰 */
 	.g-chip-solid {
-		background-color: #141418;
+		background-color: #2F6B3F;
 		color: #FFFFFF;
 		font-size: 11px;
 		font-weight: 600;
@@ -150,26 +151,26 @@
 
 	.g-chip-outline {
 		background-color: #FFFFFF;
-		color: #141418;
+		color: #22301F;
 		font-size: 11px;
 		font-weight: 600;
-		border: 1px solid #ECECEB;
+		border: 1px solid #E7E3D6;
 		border-radius: 6px;
 		padding: 4px 8px;
 	}
 
 	.g-chip-dim {
-		background-color: #F6F6F4;
-		color: #86868B;
+		background-color: #F3F7F1;
+		color: #8C9689;
 		font-size: 11px;
 		font-weight: 600;
 		border-radius: 6px;
 		padding: 5px 9px;
 	}
 
-	/* 状态徽章：炉火橙实底（可取餐 / 进行中） */
+	/* 状态徽章：绿实底（可取餐 / 配送中 / 已达成） */
 	.g-chip-fire {
-		background-color: #FF4A17;
+		background-color: #2F6B3F;
 		color: #FFFFFF;
 		font-size: 11px;
 		font-weight: 700;
@@ -177,16 +178,16 @@
 		padding: 4px 9px;
 	}
 
-	/* 价格：炉火橙加粗 */
+	/* 价格：深绿加粗 */
 	.g-price {
-		color: #FF4A17;
+		color: #24522F;
 		font-weight: 800;
 	}
 
 	/* 发丝分隔线 */
 	.g-hairline {
 		height: 1px;
-		background-color: #ECECEB;
+		background-color: #E7E3D6;
 	}
 
 	/* 全局轻提示 */
@@ -195,7 +196,7 @@
 		left: 20%;
 		right: 20%;
 		bottom: 100px;
-		background-color: rgba(20, 20, 24, 0.9);
+		background-color: rgba(29, 66, 38, 0.92);
 		color: #FFFFFF;
 		padding: 10px;
 		border-radius: 10px;

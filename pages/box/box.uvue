@@ -1,0 +1,285 @@
+<template>
+	<view class="page">
+		<scroll-view class="scroll" scroll-y="true">
+			<!-- 屏1 饭盒列表 -->
+			<view v-if="screen === 'list'" class="content">
+				<view class="head-row">
+					<text class="g-title">我的饭盒</text>
+					<text v-if="cartItems.length > 0" class="clear-btn" @click="clearCart">清空</text>
+				</view>
+				<view class="meal-row">
+					<view class="g-chip-solid"><text class="meal-badge-text">{{mealLabel}}</text></view>
+				</view>
+				<view v-if="customer.name === '' || customer.location === ''" class="card info-card">
+					<text class="g-cap card-cap">收餐信息</text>
+					<view class="form-field"><view class="form-label-row"><text class="g-label">姓名</text><text class="g-req">*</text></view><input class="g-field-input" v-model="customer.name" placeholder="如：张三 / 3 楼财务" placeholder-class="g-ph" /></view>
+					<view class="form-field"><view class="form-label-row"><text class="g-label">配送地点</text><text class="g-req">*</text></view><input class="g-field-input" v-model="customer.location" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" /></view>
+				</view>
+				<view v-if="cartItems.length > 0" class="card list-card">
+					<view v-for="item in cartItems" :key="item.id" class="dish-row">
+						<image class="row-img" :src="item.image" mode="aspectFill"></image>
+						<view class="row-main">
+							<text class="row-name">{{item.name}}</text>
+							<view class="row-meta">
+								<view class="spec-chip"><text class="spec-text">{{item.spec}}</text></view>
+								<text class="g-price row-price">¥{{item.pay}}</text>
+							</view>
+						</view>
+						<view class="stepper">
+							<view class="step-btn" @click="setQty(item.id, item.qty - 1)"><text class="step-char">−</text></view>
+							<text class="step-num">{{item.qty}}</text>
+							<view class="step-btn step-plus" @click="setQty(item.id, item.qty + 1)"><text class="step-char step-char-plus">＋</text></view>
+						</view>
+					</view>
+				</view>
+				<view v-else class="empty">
+					<text class="g-sub">饭盒还是空的，去今日菜单挑几个菜</text>
+				</view>
+			</view>
+
+			<!-- 屏2 订单确认 -->
+			<view v-else-if="screen === 'confirm'" class="content">
+				<view class="ok-head">
+					<view class="ok-mark"><text class="ok-mark-char">✓</text></view>
+					<text class="ok-title">{{confirmHeadline}}</text>
+				</view>
+				<view v-if="customer.location === '' || customer.phone === ''" class="quick-box">
+					<view v-if="customer.location === ''" class="form-field"><view class="form-label-row"><text class="g-label">配送地点</text><text class="g-req">*</text></view><input class="g-field-input" v-model="customer.location" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" /></view>
+					<view v-if="customer.phone === ''" class="form-field"><view class="form-label-row"><text class="g-label">联系电话（选填）</text></view><input class="g-field-input" v-model="customer.phone" type="number" placeholder="138 0000 0000" placeholder-class="g-ph" /></view>
+				</view>
+				<view class="card confirm-card">
+					<text class="g-cap card-cap">今日所点</text>
+					<view v-for="item in cartItems" :key="item.id" class="c-line"><text class="c-name">{{item.name}} ×{{item.qty}}</text><text class="c-price">¥{{item.pay * item.qty}}</text></view>
+					<view class="g-hairline info-line"></view>
+					<view class="info-row"><text class="info-label">配送地点</text><text class="info-value">{{customer.location || '公司前台'}}</text></view>
+					<view class="info-row"><text class="info-label">配送时间</text><text class="info-value">{{deliveryLabel}}</text></view>
+					<view class="info-row"><text class="info-label">联系电话</text><text class="info-value">{{customer.phone || '未填写'}}</text></view>
+				</view>
+			</view>
+
+			<!-- 屏3 模拟支付（测试环境）：商户号下来后换成 wx.requestPayment -->
+			<view v-else-if="screen === 'pay'" class="content">
+				<view class="card pay-card">
+					<view class="pay-merchant"><view class="pay-avatar"><text class="pay-avatar-char">富</text></view><text class="pay-name">富记线上饭堂</text></view>
+					<text class="pay-amount">¥{{total}}</text>
+					<text class="pay-mode">微信支付 · 模拟环境 · {{mealLabel}}</text>
+				</view>
+				<view class="notice"><text class="notice-text">当前为测试模式：此步不产生真实扣款。微信支付商户号开通后，这里会替换为真正的微信支付。</text></view>
+				<button class="g-btn-primary cta" :disabled="submitting" @click="confirmOrder">{{submitting ? '支付中…' : '确认支付'}}</button>
+				<button class="g-btn-ghost cta cta-gap" @click="screen = 'confirm'">返回修改订单</button>
+			</view>
+
+			<!-- 屏4 成功：取餐码 + 明细 -->
+			<view v-else class="content">
+				<view class="ok-head">
+					<view class="ok-mark"><text class="ok-mark-char">✓</text></view>
+					<text class="ok-title">{{mealLabel}}下单成功</text>
+					<text class="g-sub ok-note">饭堂已收到，截单后开火现炒</text>
+				</view>
+				<view class="card ticket">
+					<view class="pcode-row">
+						<view class="pcode-left"><text class="g-cap">取餐码</text><text class="pcode">{{pickupCode}}</text></view>
+						<text class="ticket-no">NO.{{orderNo}}</text>
+					</view>
+					<view class="g-hairline"></view>
+					<view class="ticket-body">
+						<view v-for="(line, index) in orderLines" :key="index" class="trow"><text class="trow-name">{{line.name}} ×{{line.qty}}</text><text class="trow-price">¥{{line.pay * line.qty}}</text></view>
+						<view class="trow"><text class="trow-name trow-hl">合计</text><text class="g-price trow-total">¥{{orderTotal}}</text></view>
+						<view class="trow"><text class="trow-name trow-dim">取餐人</text><text class="trow-value">{{customer.name || '未填写'}}</text></view>
+						<view class="trow"><text class="trow-name trow-dim">配送地点</text><text class="trow-value">{{customer.location || '公司前台'}}</text></view>
+						<view class="trow"><text class="trow-name trow-dim">建议送达</text><text class="trow-value">{{suggestLabel}}</text></view>
+					</view>
+				</view>
+				<view class="ok-links">
+					<button class="g-btn-primary ok-pri" @click="screen = 'list'">再点一单</button>
+					<button class="g-btn-ghost ok-sec" @click="goOrders">查看订单</button>
+				</view>
+			</view>
+		</scroll-view>
+
+		<!-- 底部操作区：list 屏 合计+配送信息+下单；confirm 屏 实付+去支付 -->
+		<view v-if="screen === 'list'" class="foot">
+			<view class="total-row"><text class="total-label">合计</text><text class="g-price total-num">¥{{total}}</text></view>
+			<view class="deliver-card">
+				<view class="deliver-line"><text class="deliver-label">配送时间</text><text class="deliver-value">{{deliveryLabel}}</text></view>
+				<view class="deliver-line"><text class="deliver-label">配送地点</text><text class="deliver-value">{{customer.location || '公司前台'}}</text></view>
+			</view>
+			<button class="g-btn-primary cta" :disabled="totalCount === 0" @click="goConfirm">确认下单 ¥{{total}}</button>
+		</view>
+		<view v-else-if="screen === 'confirm'" class="foot">
+			<view class="total-row"><text class="total-label">实付</text><text class="g-price total-num">¥{{total}}</text></view>
+			<button class="g-btn-primary cta" @click="goPay">去支付</button>
+			<button class="g-btn-ghost cta cta-gap" @click="screen = 'list'">返回改订单</button>
+		</view>
+
+		<view v-if="toastMessage !== ''" class="g-toast"><text class="toast-text">{{toastMessage}}</text></view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { requestJson } from '../../common/http.uts'
+	import { cartHydrate, cartItems, cartMeal, cartCount, cartTotal, cartSetQty, cartClear, CartItem } from '../../common/cart.uts'
+	import { customer, sessionSilentLogin } from '../../common/session.uts'
+	import { cfgOf } from '../../common/meals.uts'
+
+	// 下单请求行：服务端只收 id/qty/pay
+	type OrderLine = { id: string; qty: number; pay: number }
+	// 成功页小票行快照：清空饭盒后仍能展示
+	type SnapshotLine = { name: string; qty: number; pay: number }
+
+	const screen = ref('list')
+	const submitting = ref(false)
+	const toastMessage = ref('')
+	// 幂等键：进入确认屏时生成，支付失败重试时复用
+	const requestId = ref('')
+	const orderNo = ref('')
+	const orderTotal = ref(0)
+	const orderLines = ref<SnapshotLine[]>([])
+
+	const totalCount = computed((): number => cartCount())
+	const total = computed((): number => cartTotal())
+	const mealLabel = computed((): string => cfgOf(cartMeal.value).label)
+	const deliveryLabel = computed((): string => cfgOf(cartMeal.value).deliveryLabel)
+	const suggestLabel = computed((): string => cfgOf(cartMeal.value).suggest)
+	const confirmHeadline = computed((): string => cfgOf(cartMeal.value).label === '午餐' ? '今天中午，就吃这个。' : '今天晚上，就吃这个。')
+	// 取餐码：订单号尾 4 位（FJ-MMDD-L001 → #L001）
+	const pickupCode = computed((): string => { const no = orderNo.value; if (no.length >= 4) { return '#' + no.substring(no.length - 4) } return '--' })
+
+	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
+	// 北京时间当前分钟数（截单判断用）
+	function bjMinutes(): number {
+		const now = new Date()
+		const bj = new Date(now.getTime() + (480 + now.getTimezoneOffset()) * 60000)
+		return bj.getUTCHours() * 60 + bj.getUTCMinutes()
+	}
+	function setQty(id: string, qty: number) { cartSetQty(id, qty) }
+	function clearCart() { cartClear(); toast('饭盒已清空') }
+	// 列表 → 确认：本页不做可点单拦截（首页已拦），仅在收档后提示拦截；收餐信息缺项提供快捷输入
+	function goConfirm() {
+		if (totalCount.value === 0) return
+		const c = cfgOf(cartMeal.value)
+		if (bjMinutes() >= c.closeMin) { toast('今日' + c.label + '配送已结束'); return }
+		if (customer.name.trim() === '' || customer.location.trim() === '') { toast('请填写姓名和配送地点'); return }
+		requestId.value = 'r' + Date.now().toString(36) + Math.floor(Math.random() * 1e9).toString(36)
+		screen.value = 'confirm'
+	}
+	function goPay() {
+		if (customer.name.trim() === '' || customer.location.trim() === '') { toast('请填写姓名和配送地点'); return }
+		screen.value = 'pay'
+	}
+	// 确认支付：创建订单 → 快照小票 → 清空饭盒 → 成功屏
+	async function confirmOrder() {
+		if (submitting.value) return
+		const items: OrderLine[] = []
+		cartItems.value.forEach((it: CartItem) => { const line: OrderLine = { id: it.id, qty: it.qty, pay: it.pay }; items.push(line) })
+		if (items.length === 0) { toast('饭盒还是空的'); return }
+		submitting.value = true
+		try {
+			const result = await requestJson('/cf-order', { action: 'create', meal: cartMeal.value, request_id: requestId.value, items: items, customer: { name: customer.name, location: customer.location, phone: customer.phone, note: customer.note } } as UTSJSONObject)
+			if (result !== null && result.getBoolean('ok') === true) {
+				const data = result.getJSON('data')
+				if (data instanceof UTSJSONObject) { orderNo.value = data.getString('orderNo') ?? '' }
+				const lines: SnapshotLine[] = []
+				cartItems.value.forEach((it: CartItem) => { lines.push({ name: it.name, qty: it.qty, pay: it.pay }) })
+				orderLines.value = lines
+				orderTotal.value = total.value
+				cartClear()
+				screen.value = 'success'
+			} else { toast(result !== null ? (result.getString('err') ?? '下单失败，请重试') : '网络异常，请稍后再试') }
+		} catch (e) { toast('网络异常，请稍后再试') }
+		submitting.value = false
+	}
+	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }
+
+	onLoad(() => { sessionSilentLogin(); cartHydrate() })
+	onShow(() => { cartHydrate() })
+</script>
+
+<style>
+	.page { flex: 1; background-color: #F6F3EB; }
+	.scroll { flex: 1; }
+	.content { padding: 20px 20px 28px; }
+	/* ---------- 通用 ---------- */
+	.card { background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E7E3D6; }
+	.cta { width: 100%; margin-top: 14px; }
+	.cta-gap { margin-top: 10px; }
+	.form-field { margin-top: 12px; }
+	.form-label-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
+	.card-cap { display: block; margin-bottom: 4px; }
+	.toast-text { color: #FFFFFF; font-size: 13px; text-align: center; }
+	/* ---------- 屏1 饭盒列表 ---------- */
+	.head-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 8px; }
+	.clear-btn { font-size: 13px; font-weight: 600; color: #8C9689; padding: 6px 0 6px 12px; }
+	.meal-row { display: flex; flex-direction: row; margin-top: 12px; }
+	.meal-badge-text { color: #FFFFFF; font-size: 11px; font-weight: 600; }
+	.info-card { margin-top: 14px; padding: 14px; }
+	.list-card { margin-top: 14px; padding: 4px 14px; }
+	.dish-row { display: flex; flex-direction: row; align-items: center; padding: 13px 0; border-bottom: 1px solid #E7E3D6; }
+	.dish-row:last-child { border-bottom: 0; }
+	.row-img { width: 52px; height: 52px; border-radius: 12px; background-color: #F3F7F1; flex-shrink: 0; }
+	.row-main { flex: 1; min-width: 0; margin-left: 12px; }
+	.row-name { font-size: 15px; font-weight: 700; color: #22301F; }
+	.row-meta { display: flex; flex-direction: row; align-items: center; margin-top: 7px; }
+	.spec-chip { background-color: #F3F7F1; border-radius: 6px; padding: 2px 7px; }
+	.spec-text { font-size: 10px; font-weight: 600; color: #8C9689; }
+	.row-price { font-size: 15px; margin-left: 8px; }
+	.stepper { display: flex; flex-direction: row; align-items: center; flex-shrink: 0; margin-left: 10px; }
+	.step-btn { width: 26px; height: 26px; border-radius: 13px; background-color: #F3F7F1; display: flex; align-items: center; justify-content: center; }
+	.step-plus { background-color: #2F6B3F; margin-left: 4px; }
+	.step-char { color: #8C9689; font-size: 14px; line-height: 14px; margin-top: -2px; }
+	.step-char-plus { color: #FFFFFF; }
+	.step-num { min-width: 26px; text-align: center; font-size: 14px; font-weight: 700; color: #22301F; }
+	.empty { display: flex; align-items: center; justify-content: center; padding: 60px 0; }
+	/* ---------- 确认 / 成功共用 ---------- */
+	.ok-head { display: flex; flex-direction: column; align-items: center; padding-top: 12px; }
+	.ok-mark { width: 56px; height: 56px; border-radius: 28px; background-color: #2F6B3F; display: flex; align-items: center; justify-content: center; }
+	.ok-mark-char { color: #FFFFFF; font-size: 26px; }
+	.ok-title { display: block; font-size: 22px; font-weight: 900; color: #22301F; margin-top: 12px; }
+	.ok-note { display: block; margin-top: 6px; text-align: center; }
+	/* ---------- 屏2 订单确认 ---------- */
+	.quick-box { margin-top: 16px; }
+	.confirm-card { margin-top: 16px; padding: 14px; }
+	.c-line { display: flex; flex-direction: row; justify-content: space-between; padding: 8px 0; }
+	.c-name { font-size: 13px; color: #22301F; }
+	.c-price { font-size: 13px; font-weight: 700; color: #22301F; }
+	.info-line { margin-top: 8px; }
+	.info-row { display: flex; flex-direction: row; justify-content: space-between; padding: 8px 0; }
+	.info-label { font-size: 12px; color: #8C9689; }
+	.info-value { font-size: 12.5px; font-weight: 600; color: #22301F; }
+	/* ---------- 屏3 模拟支付 ---------- */
+	.pay-card { margin-top: 10px; padding: 26px 16px 22px; display: flex; flex-direction: column; align-items: center; }
+	.pay-merchant { display: flex; flex-direction: row; align-items: center; }
+	.pay-avatar { width: 40px; height: 40px; border-radius: 12px; background-color: #1D4226; display: flex; align-items: center; justify-content: center; }
+	.pay-avatar-char { color: #FFFFFF; font-size: 20px; font-weight: 900; }
+	.pay-name { font-size: 15px; font-weight: 700; color: #22301F; margin-left: 9px; }
+	.pay-amount { font-size: 44px; font-weight: 800; color: #22301F; margin-top: 18px; }
+	.pay-mode { color: #8C9689; font-size: 12px; margin-top: 8px; }
+	.notice { background-color: #E9F1E7; border-radius: 12px; padding: 10px 12px; margin-top: 14px; }
+	.notice-text { color: #24522F; font-size: 11.5px; line-height: 1.7; }
+	/* ---------- 屏4 成功 ---------- */
+	.ticket { width: 100%; box-sizing: border-box; margin-top: 18px; padding: 16px; }
+	.pcode-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding-bottom: 14px; }
+	.pcode-left { display: flex; flex-direction: column; }
+	.pcode { font-size: 34px; font-weight: 900; color: #24522F; margin-top: 6px; letter-spacing: 0.06em; }
+	.ticket-no { font-size: 11px; color: #8C9689; }
+	.ticket-body { padding-top: 12px; }
+	.trow { display: flex; flex-direction: row; justify-content: space-between; padding-top: 9px; }
+	.trow-name { font-size: 12.5px; color: #22301F; }
+	.trow-hl { font-weight: 700; }
+	.trow-dim { color: #8C9689; }
+	.trow-price { font-size: 12.5px; color: #22301F; font-weight: 700; }
+	.trow-total { font-size: 16px; }
+	.trow-value { font-size: 12.5px; color: #22301F; }
+	.ok-links { display: flex; flex-direction: row; width: 100%; margin-top: 18px; }
+	.ok-pri { flex: 1; }
+	.ok-sec { flex: 1; margin-left: 10px; }
+	/* ---------- 底部操作区 ---------- */
+	.foot { background-color: #FFFFFF; border-top: 1px solid #E7E3D6; padding: 12px 20px 14px; }
+	.total-row { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; }
+	.total-label { font-size: 14px; font-weight: 700; color: #22301F; }
+	.total-num { font-size: 22px; }
+	.deliver-card { background-color: #F6F3EB; border-radius: 12px; padding: 10px 12px; margin-top: 12px; }
+	.deliver-line { display: flex; flex-direction: row; justify-content: space-between; padding: 3px 0; }
+	.deliver-label { font-size: 12px; color: #8C9689; }
+	.deliver-value { font-size: 12px; font-weight: 600; color: #22301F; }
+</style>

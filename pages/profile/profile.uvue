@@ -20,42 +20,32 @@
 
 		<!-- 常用信息：保存后点单页自动回填 -->
 		<view class="section">
-			<text class="g-cap">常用信息 · 下单自动回填</text>
+			<text class="g-cap">常用信息 · 配送与联系</text>
 			<view class="g-hairline sec-line"></view>
 			<view class="form-field"><view class="form-label-row"><text class="g-label">姓名</text><text class="g-req">*</text></view><input class="g-field-input" v-model="form.name" placeholder="如：张三 / 3 楼财务" placeholder-class="g-ph" /></view>
-			<view class="form-field"><view class="form-label-row"><text class="g-label">手机号（选填）</text></view><input class="g-field-input" v-model="form.phone" type="number" placeholder="异常联系用" placeholder-class="g-ph" /></view>
-			<view class="form-field"><view class="form-label-row"><text class="g-label">常用取餐位置（选填）</text></view><input class="g-field-input" v-model="form.location" placeholder="例如：产品部 · 18F" placeholder-class="g-ph" /></view>
+			<view class="form-field"><view class="form-label-row"><text class="g-label">联系电话（选填）</text></view><input class="g-field-input" v-model="form.phone" type="number" placeholder="138 0000 0000" placeholder-class="g-ph" /></view>
+			<view class="form-field"><view class="form-label-row"><text class="g-label">常用配送地点（选填）</text></view><input class="g-field-input" v-model="form.location" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" /></view>
 			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveProfile">{{saving ? '保存中…' : '保存'}}</button>
 		</view>
 
-		<!-- 我的订单 -->
+		<!-- 菜单：订单已迁往独立 Tab -->
 		<view class="section">
-			<text class="g-cap">我的订单</text>
+			<text class="g-cap">更多服务</text>
 			<view class="g-hairline sec-line"></view>
-			<text v-if="ordersLoading && loginOk" class="g-sub order-empty">正在加载订单…</text>
-			<text v-else-if="orders.length === 0" class="g-sub order-empty">{{loginOk ? '还没有订单' : '登录后即可查看订单'}}</text>
-			<view v-else>
-				<view v-for="(order, idx) in orders" :key="order.orderNo">
-					<view v-if="idx > 0" class="g-hairline order-sep"></view>
-					<view class="order-item">
-						<view class="order-head">
-							<text class="order-no">{{order.orderNo}}</text>
-							<text class="st-badge" :class="statusClass(order.status)">{{statusText(order.status)}}</text>
-						</view>
-						<view v-for="(item, itemIdx) in order.items" :key="itemIdx" class="order-line">
-							<text class="order-line-name">{{item.name}} × {{item.qty}}</text>
-							<text class="order-line-price">¥{{item.pay * item.qty}}</text>
-						</view>
-						<view class="order-foot">
-							<text class="order-time">{{fmtTime(order.createdAt)}}</text>
-							<view class="order-total-row"><text class="order-total-label">合计</text><text class="g-price order-total-num">¥{{order.total}}</text></view>
-						</view>
-					</view>
-				</view>
+			<view class="card menu-card">
+				<navigator class="menu-row" url="/pages/orders/orders" open-type="switchTab">
+					<text class="menu-name">我的订单</text>
+					<text class="menu-arrow">›</text>
+				</navigator>
+			</view>
+			<view class="card menu-card">
+				<view class="menu-row" @click="toast('感谢反馈，请联系饭堂微信群')"><text class="menu-name">意见反馈</text><text class="menu-arrow">›</text></view>
+				<view class="g-hairline"></view>
+				<view class="menu-row" @click="toast('富记线上饭堂 · 写字楼现炒午餐')"><text class="menu-name">关于我们</text><text class="menu-arrow">›</text></view>
 			</view>
 		</view>
 
-		<text class="g-cap foot-note">在线支付即将上线</text>
+		<text class="g-sub logout">退出登录</text>
 		<view v-if="toastMessage !== ''" class="g-toast"><text class="toast-text">{{toastMessage}}</text></view>
 	</view>
 </template>
@@ -272,19 +262,18 @@
 	}
 	onPullDownRefresh(() => { refreshAll() })
 </script>
-
 <style>
-	.page { background-color: #FFFFFF; padding: 20px 20px 36px; }
+	.page { background-color: #F6F3EB; padding: 20px 20px 36px; }
 	/* ---------- 页头 ---------- */
 	.head { margin-top: 12px; margin-bottom: 4px; }
 	.head-title { display: block; margin-top: 6px; }
 	/* ---------- 登录态 ---------- */
 	.login-row { display: flex; flex-direction: row; align-items: center; margin-top: 20px; }
-	.avatar { width: 46px; height: 46px; border-radius: 14px; background-color: #141418; display: flex; align-items: center; justify-content: center; }
+	.avatar { width: 46px; height: 46px; border-radius: 14px; background-color: #2F6B3F; display: flex; align-items: center; justify-content: center; }
 	.avatar-char { color: #FFFFFF; font-size: 22px; font-weight: 900; }
 	.login-main { flex: 1; margin-left: 12px; }
-	.login-title { display: block; font-size: 15px; font-weight: 700; color: #141418; }
-	.login-err { display: block; color: #FF4A17; font-size: 11.5px; margin-top: 4px; }
+	.login-title { display: block; font-size: 15px; font-weight: 700; color: #22301F; }
+	.login-err { display: block; color: #C8862A; font-size: 11.5px; margin-top: 4px; }
 	/* 重新登录：在 g-btn-ghost 基础上压小尺寸 */
 	.relogin { width: 96px; height: 38px; font-size: 12.5px; margin-left: 12px; }
 	/* ---------- 区块标题 ---------- */
@@ -294,27 +283,19 @@
 	.form-field { margin-top: 12px; }
 	.form-label-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
 	.save-btn { width: 100%; border: 0; margin-top: 16px; }
-	/* ---------- 我的订单 ---------- */
-	.order-empty { display: block; text-align: center; padding: 14px 0 4px; }
-	.order-sep { margin-top: 14px; }
-	.order-item { padding-top: 12px; }
-	.order-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
-	.order-no { font-size: 12px; font-weight: 700; color: #141418; }
-	/* 状态徽章四态外观：对应全局 g-chip-outline / solid / fire / dim */
+	/* ---------- 菜单行 ---------- */
+	.card { background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E7E3D6; }
+	.menu-card { margin-top: 12px; padding: 2px 14px; }
+	.menu-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 14px 0; }
+	.menu-name { font-size: 14px; font-weight: 600; color: #22301F; }
+	.menu-arrow { font-size: 16px; color: #8C9689; }
+	/* ---------- 状态徽章四态（绿系）：与 script 的 statusClass 对应 ---------- */
 	.st-badge { border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 600; }
-	.st-pending { background-color: #FFFFFF; color: #141418; border: 1px solid #ECECEB; }
-	.st-cooking { background-color: #141418; color: #FFFFFF; }
-	.st-ready { background-color: #FF4A17; color: #FFFFFF; font-weight: 700; }
-	.st-cancel { background-color: #F6F6F4; color: #86868B; }
-	.order-line { display: flex; flex-direction: row; justify-content: space-between; padding: 7px 0; }
-	.order-line-name { font-size: 13px; color: #141418; }
-	.order-line-price { font-size: 13px; font-weight: 800; color: #141418; }
-	.order-foot { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding-top: 8px; }
-	.order-time { font-size: 11px; color: #86868B; }
-	.order-total-row { display: flex; flex-direction: row; align-items: baseline; }
-	.order-total-label { font-size: 12px; color: #86868B; margin-right: 6px; }
-	.order-total-num { font-size: 15px; }
+	.st-pending { background-color: #FFFFFF; color: #22301F; border: 1px solid #E7E3D6; }
+	.st-cooking { background-color: #E9F1E7; color: #24522F; }
+	.st-ready { background-color: #2F6B3F; color: #FFFFFF; font-weight: 700; }
+	.st-cancel { background-color: #F3F7F1; color: #8C9689; }
 	/* ---------- 页脚 / 提示 ---------- */
-	.foot-note { display: block; text-align: center; margin-top: 18px; }
+	.logout { display: block; text-align: center; margin-top: 26px; }
 	.toast-text { color: #FFFFFF; font-size: 13px; text-align: center; }
 </style>

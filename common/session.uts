@@ -1,0 +1,81 @@
+/**
+ * 登录会话与顾客信息：模块级单例，供 首页/饭盒/我的 共享。
+ * 静默登录全流程不弹窗：有 token 先验 → 失效清掉重登一次 → 无 token 直接微信登录；
+ * 失败只记日志（游客照常下单，订单 uid 为空）。
+ */
+
+import { requestJson } from './http.uts'
+
+export const customer = reactive({ name: '', location: '', phone: '', note: '' })
+
+let loginDone = false
+
+function getWxCode(): Promise<string> {
+	return new Promise<string>((resolve) => {
+		uni.login({
+			provider: 'weixin',
+			success: (res) => { resolve(res.code ?? '') },
+			fail: (err) => { console.log('uni.login fail', err); resolve('') }
+		})
+	})
+}
+
+// 从 data 里取资料（login / getProfile 两种响应都带 data.profile）
+function pickProfile(data: UTSJSONObject): UTSJSONObject | null {
+	const p = data.getJSON('profile')
+	if (p instanceof UTSJSONObject) return p
+	return null
+}
+
+// 完整登录流程，成功返回资料（可能为 null），失败返回 null
+export async function ensureLogin(): Promise<UTSJSONObject | null> {
+	try {
+		const t = uni.getStorageSync('xk_user_token')
+		if (t !== '' && t !== null) {
+			const r = await requestJson('/cf-user', { action: 'getProfile' } as UTSJSONObject)
+			if (r !== null && r.getBoolean('ok') === true) {
+				const d = r.getJSON('data')
+				if (d instanceof UTSJSONObject) { return pickProfile(d) }
+				return null
+			}
+			if (r !== null && (r.getString('err') ?? '').indexOf('登录') !== -1) {
+				// token 失效：清掉后走一次重新登录
+				uni.removeStorageSync('xk_user_token')
+			} else { return null }
+		}
+		const code = await getWxCode()
+		if (code === '') { console.log('ensureLogin: 未拿到微信 code'); return null }
+		const r2 = await requestJson('/cf-user', { action: 'login', code: code } as UTSJSONObject)
+		if (r2 !== null && r2.getBoolean('ok') === true) {
+			const d2 = r2.getJSON('data')
+			if (d2 instanceof UTSJSONObject) {
+				const token = d2.getString('token') ?? ''
+				if (token !== '') { uni.setStorageSync('xk_user_token', token) }
+				return pickProfile(d2)
+			}
+		}
+		console.log('ensureLogin: 登录失败', r2 !== null ? (r2.getString('err') ?? '') : '网络异常')
+		return null
+	} catch (e) { console.log('ensureLogin fail', e); return null }
+}
+
+// 静默登录 + 回填常用信息（每个 Tab 页 onShow 都可调用；整个会话只真正登录一次）
+export async function sessionSilentLogin() {
+	if (loginDone) return
+	const profile = await ensureLogin()
+	if (profile === null) return
+	loginDone = true
+	const name = profile.getString('name') ?? ''
+	const location = profile.getString('location') ?? ''
+	const phone = profile.getString('phone') ?? ''
+	if (name !== '') customer.name = name
+	if (location !== '') customer.location = location
+	if (phone !== '') customer.phone = phone
+}
+
+// 外部（如我的页保存资料后）刷新本地缓存
+export function sessionApplyProfile(name: string, location: string, phone: string) {
+	customer.name = name
+	customer.location = location
+	customer.phone = phone
+}

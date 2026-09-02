@@ -3,20 +3,39 @@
 		{
 			"path": "pages/index/index",
 			"style": {
-				"navigationBarTitleText": "富记线上饭堂",
-				"navigationBarBackgroundColor": "#FFFFFF",
+				"navigationBarTitleText": "今日菜单",
+				"navigationBarBackgroundColor": "#2F6B3F",
+				"navigationBarTextStyle": "white",
+				"backgroundColor": "#F6F3EB"
+			}
+		},
+		{
+			"path": "pages/box/box",
+			"style": {
+				"navigationBarTitleText": "我的饭盒",
+				"navigationBarBackgroundColor": "#F6F3EB",
 				"navigationBarTextStyle": "black",
-				"backgroundColor": "#FFFFFF"
+				"backgroundColor": "#F6F3EB"
+			}
+		},
+		{
+			"path": "pages/orders/orders",
+			"style": {
+				"navigationBarTitleText": "订单",
+				"navigationBarBackgroundColor": "#F6F3EB",
+				"navigationBarTextStyle": "black",
+				"backgroundColor": "#F6F3EB",
+				"enablePullDownRefresh": true
 			}
 		},
 		{
 			"path": "pages/profile/profile",
 			"style": {
 				"navigationBarTitleText": "我的",
-				"enablePullDownRefresh": true,
-				"backgroundColor": "#FFFFFF",
-				"navigationBarBackgroundColor": "#FFFFFF",
-				"navigationBarTextStyle": "black"
+				"navigationBarBackgroundColor": "#F6F3EB",
+				"navigationBarTextStyle": "black",
+				"backgroundColor": "#F6F3EB",
+				"enablePullDownRefresh": true
 			}
 		},
 		{
@@ -29,16 +48,28 @@
 		}
 	],
 	"tabBar": {
-		"color": "#86868B",
-		"selectedColor": "#141418",
+		"color": "#8C9689",
+		"selectedColor": "#2F6B3F",
 		"backgroundColor": "#FFFFFF",
 		"borderStyle": "black",
 		"list": [
 			{
 				"pagePath": "pages/index/index",
-				"text": "首页",
+				"text": "今日菜单",
 				"iconPath": "static/tab/home.png",
 				"selectedIconPath": "static/tab/home-on.png"
+			},
+			{
+				"pagePath": "pages/box/box",
+				"text": "我的饭盒",
+				"iconPath": "static/tab/box.png",
+				"selectedIconPath": "static/tab/box-on.png"
+			},
+			{
+				"pagePath": "pages/orders/orders",
+				"text": "订单",
+				"iconPath": "static/tab/orders.png",
+				"selectedIconPath": "static/tab/orders-on.png"
 			},
 			{
 				"pagePath": "pages/profile/profile",
@@ -51,8 +82,8 @@
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
 		"navigationBarTitleText": "富记线上饭堂",
-		"navigationBarBackgroundColor": "#FFFFFF",
-		"backgroundColor": "#FFFFFF"
+		"navigationBarBackgroundColor": "#F6F3EB",
+		"backgroundColor": "#F6F3EB"
 	},
 	"uniIdRouter": {}
 }

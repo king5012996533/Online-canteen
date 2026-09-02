@@ -1,0 +1,115 @@
+/**
+ * 饭盒（购物车）全局状态：模块级单例 + storage 镜像，供 首页/饭盒 两个 Tab 页共享。
+ * 规则：
+ *  - 一单一餐：meal 属于饭盒；饭盒非空时切换餐次会被拒绝（setMeal 返回 false）；
+ *  - 所有写操作立即落 storage，页面 onShow 时调 hydrate() 兜底恢复；
+ *  - spec 是份量标签：自定义价菜品按所选金额给出（标准/加量/更足），固定价菜品恒为"标准"。
+ */
+
+export type CartItem = {
+	id: string
+	name: string
+	image: string
+	pay: number
+	qty: number
+	spec: string
+}
+
+const KEY_ITEMS = 'xk_cart_items'
+const KEY_MEAL = 'xk_cart_meal'
+
+export const cartItems = ref<CartItem[]>([])
+export const cartMeal = ref('lunch')
+
+let hydrated = false
+
+// 从 storage 恢复（各 Tab 页 onShow 调用，幂等）
+export function cartHydrate() {
+	if (hydrated) return
+	hydrated = true
+	const s = uni.getStorageSync(KEY_ITEMS)
+	if (typeof s === 'string' && s.length > 2) {
+		const arr = JSON.parse<Array<UTSJSONObject>>(s)
+		if (arr !== null) {
+			const list: CartItem[] = []
+			arr.forEach((o) => {
+				const id = o.getString('id') ?? ''
+				const qty = Math.floor(o.getNumber('qty') ?? 0)
+				if (id !== '' && qty > 0) {
+					list.push({ id: id, name: o.getString('name') ?? '', image: o.getString('image') ?? '', pay: o.getNumber('pay') ?? 0, qty: qty, spec: o.getString('spec') ?? '标准' })
+				}
+			})
+			cartItems.value = list
+		}
+	}
+	const m = uni.getStorageSync(KEY_MEAL)
+	if (m === 'dinner') { cartMeal.value = 'dinner' } else if (m === 'lunch') { cartMeal.value = 'lunch' }
+}
+
+function persist() {
+	uni.setStorageSync(KEY_ITEMS, JSON.stringify(cartItems.value))
+	uni.setStorageSync(KEY_MEAL, cartMeal.value)
+	cartSyncBadge()
+}
+
+// 饭盒里是否已有菜品
+export function cartCount(): number {
+	return cartItems.value.reduce((sum, item) => sum + item.qty, 0)
+}
+
+// 饭盒合计金额
+export function cartTotal(): number {
+	return cartItems.value.reduce((sum, item) => sum + item.pay * item.qty, 0)
+}
+
+// 加入/累加一份菜品（同 id 累加数量并采用最新单价与份量标签）
+export function cartAdd(item: CartItem) {
+	const exist = cartItems.value.find((it) => it.id === item.id)
+	if (exist !== null) {
+		exist.qty += item.qty
+		exist.pay = item.pay
+		exist.spec = item.spec
+	} else {
+		cartItems.value.push(item)
+	}
+	persist()
+}
+
+// 直接设置某菜品的数量（0 = 移除）
+export function cartSetQty(id: string, qty: number) {
+	const it = cartItems.value.find((x) => x.id === id)
+	if (it === null) return
+	it.qty = Math.max(0, qty)
+	if (it.qty === 0) {
+		cartItems.value = cartItems.value.filter((x) => x.id !== id)
+	}
+	persist()
+}
+
+// 切换餐次：饭盒非空时拒绝（返回 false）
+export function cartSetMeal(key: string): boolean {
+	if (key !== 'lunch' && key !== 'dinner') return false
+	if (key !== cartMeal.value && cartItems.value.length > 0) {
+		return false
+	}
+	cartMeal.value = key
+	persist()
+	return true
+}
+
+// 饭盒 Tab 角标跟随数量（index=1 为饭盒 Tab）
+export function cartSyncBadge() {
+	const n = cartCount()
+	if (n > 0) {
+		uni.setTabBarBadge({ index: 1, text: '' + n })
+	} else {
+		uni.removeTabBarBadge({ index: 1 })
+	}
+}
+
+// 下单成功后清空
+export function cartClear() {
+	cartItems.value = []
+	persist()
+	cartSyncBadge()
+}

@@ -1,0 +1,240 @@
+<template>
+	<view class="page">
+		<scroll-view class="scroll" scroll-y="true">
+			<!-- 屏1 订单列表 -->
+			<view v-if="screen === 'list'" class="content">
+				<view class="filters">
+					<view class="chip" :class="{'chip-on': filter === 'all'}" @click="filter = 'all'"><text class="chip-text" :class="{'chip-text-on': filter === 'all'}">全部</text></view>
+					<view class="chip" :class="{'chip-on': filter === 'today'}" @click="filter = 'today'"><text class="chip-text" :class="{'chip-text-on': filter === 'today'}">今天</text></view>
+					<view class="chip" :class="{'chip-on': filter === 'yesterday'}" @click="filter = 'yesterday'"><text class="chip-text" :class="{'chip-text-on': filter === 'yesterday'}">昨天</text></view>
+					<view class="chip" :class="{'chip-on': filter === 'earlier'}" @click="filter = 'earlier'"><text class="chip-text" :class="{'chip-text-on': filter === 'earlier'}">更早</text></view>
+				</view>
+				<text v-if="loading && orders.length === 0" class="g-sub state-text">正在加载订单…</text>
+				<view v-else-if="filteredOrders.length === 0" class="empty"><text class="g-sub">还没有订单，去今日菜单点一单吧</text></view>
+				<view v-else>
+					<view v-for="order in filteredOrders" :key="order.orderNo" class="card order-card">
+						<view class="o-head">
+							<text class="o-no">{{order.orderNo}}</text>
+							<view class="g-chip-outline meal-chip"><text class="meal-chip-text">{{cfgLabel(order.meal)}}</text></view>
+							<text class="st-badge" :class="statusClass(order.status)">{{statusText(order.status)}}</text>
+						</view>
+						<text class="o-summary">{{orderSummary(order)}}</text>
+						<view class="o-foot">
+							<view class="o-total-row"><text class="o-total-label">合计</text><text class="g-price o-total-num">¥{{order.total}}</text></view>
+							<text class="o-link" @click="openStatus(order)">查看状态</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<!-- 屏2 订单状态：竖向时间线 -->
+			<view v-else class="content">
+				<view class="s-head">
+					<text class="g-cap">订单状态</text>
+					<text v-if="current !== null" class="s-no">{{current?.orderNo}}</text>
+				</view>
+				<view class="card tl-card">
+					<view v-if="isCanceled" class="cancel-row"><text class="cancel-text">订单已取消</text></view>
+					<view v-if="isCanceled" class="g-hairline cancel-sep"></view>
+					<view v-for="(step, index) in timeline" :key="step.key" class="tl-row">
+						<view class="tl-rail">
+							<view class="tl-dot" :class="{'tl-dot-on': step.done}"><text v-if="step.done" class="tl-dot-char">✓</text></view>
+							<view v-if="index < timeline.length - 1" class="tl-line" :class="{'tl-line-on': step.done}"></view>
+						</view>
+						<view class="tl-main">
+							<text class="tl-name" :class="{'tl-dim': !step.done}">{{step.name}}</text>
+							<text class="tl-time" :class="{'tl-dim': !step.done}">{{step.time}}</text>
+						</view>
+					</view>
+				</view>
+				<button class="g-btn-ghost cta" @click="backList">返回列表</button>
+			</view>
+		</scroll-view>
+		<view v-if="toastMessage !== ''" class="g-toast"><text class="toast-text">{{toastMessage}}</text></view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { requestJson } from '../../common/http.uts'
+	import { sessionSilentLogin, ensureLogin } from '../../common/session.uts'
+	import { cfgOf } from '../../common/meals.uts'
+
+	type OrderItem = { name: string; pay: number; qty: number }
+	// statusLog 展平成三个状态时间戳（0 = 未达成）
+	type OrderLog = { cooking: number; ready: number; delivered: number }
+	type MyOrder = { orderNo: string; meal: string; status: string; total: number; items: OrderItem[]; createdAt: number; log: OrderLog }
+	type TlStep = { key: string; name: string; time: string; done: boolean }
+
+	const screen = ref('list')
+	const loading = ref(true)
+	const orders = ref<MyOrder[]>([])
+	const filter = ref('all')
+	const current = ref<MyOrder | null>(null)
+	const toastMessage = ref('')
+
+	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
+	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
+	// 北京时间：+8h 修正后读 getUTC 系列
+	function bjDate(ms: number): Date { return new Date(ms + (480 + new Date(ms).getTimezoneOffset()) * 60000) }
+	function fmtTime(ms: number): string {
+		if (ms <= 0) return '—'
+		const d = bjDate(ms)
+		return pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes())
+	}
+	// createdAt 与今天（北京日期）相差的天数：0 今天 / 1 昨天 / ≥2 更早
+	function dayDiff(ms: number): number {
+		const c = bjDate(ms)
+		const n = bjDate(Date.now())
+		const cDay = Date.UTC(c.getUTCFullYear(), c.getUTCMonth(), c.getUTCDate())
+		const nDay = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
+		return Math.floor((nDay - cDay) / 86400000)
+	}
+	function matchFilter(o: MyOrder): boolean {
+		if (filter.value === 'all') return true
+		const diff = dayDiff(o.createdAt)
+		if (filter.value === 'today') return diff <= 0
+		if (filter.value === 'yesterday') return diff === 1
+		return diff >= 2
+	}
+	function statusText(s: string): string { if (s === 'cooking') return '备餐中'; if (s === 'ready') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '已下单' }
+	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready' || s === 'delivered') return 'st-ready'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+	function cfgLabel(meal: string): string { return cfgOf(meal).label }
+	// 菜品行摘要：第一项名 + 共 N 件
+	function orderSummary(order: MyOrder): string {
+		if (order.items.length === 0) return '—'
+		const first = order.items[0]
+		let totalQty = 0
+		order.items.forEach((it: OrderItem) => { totalQty += it.qty })
+		if (order.items.length === 1) return first.name + ' ×' + first.qty
+		return first.name + ' ×' + first.qty + ' 等 ' + totalQty + ' 件'
+	}
+
+	const filteredOrders = computed((): MyOrder[] => {
+		const list: MyOrder[] = []
+		orders.value.forEach((o: MyOrder) => { if (matchFilter(o)) { list.push(o) } })
+		return list
+	})
+	const isCanceled = computed((): boolean => { const o = current.value; return o !== null && o.status === 'canceled' })
+	// 状态时间线：已下单 → 备餐中 → 配送中 → 已送达（时间未达成为 '—'、圆不点亮）
+	const timeline = computed((): TlStep[] => {
+		const o = current.value
+		if (o === null) return []
+		const steps: TlStep[] = []
+		steps.push({ key: 'pending', name: '已下单', time: fmtTime(o.createdAt), done: true })
+		steps.push({ key: 'cooking', name: '备餐中', time: fmtTime(o.log.cooking), done: o.log.cooking > 0 })
+		steps.push({ key: 'ready', name: '配送中', time: fmtTime(o.log.ready), done: o.log.ready > 0 })
+		steps.push({ key: 'delivered', name: '已送达', time: fmtTime(o.log.delivered), done: o.log.delivered > 0 })
+		return steps
+	})
+
+	// 解析 myOrders 响应里的订单数组
+	function parseOrders(r: UTSJSONObject): MyOrder[] {
+		const list: MyOrder[] = []
+		const data = r.getJSON('data')
+		if (data instanceof UTSJSONObject) {
+			const arr = data.getArray('orders')
+			if (arr !== null) {
+				for (let i = 0; i < arr.length; i++) {
+					const o = arr[i]
+					if (o instanceof UTSJSONObject) {
+						const items: OrderItem[] = []
+						const iarr = o.getArray('items')
+						if (iarr !== null) {
+							for (let j = 0; j < iarr.length; j++) {
+								const it = iarr[j]
+								if (it instanceof UTSJSONObject) {
+									items.push({ name: it.getString('name') ?? '', pay: it.getNumber('pay') ?? 0, qty: Math.floor(it.getNumber('qty') ?? 0) })
+								}
+							}
+						}
+						const logObj = o.getJSON('statusLog')
+						const log: OrderLog = { cooking: 0, ready: 0, delivered: 0 }
+						if (logObj instanceof UTSJSONObject) {
+							log.cooking = logObj.getNumber('cooking') ?? 0
+							log.ready = logObj.getNumber('ready') ?? 0
+							log.delivered = logObj.getNumber('delivered') ?? 0
+						}
+						list.push({ orderNo: o.getString('orderNo') ?? '', meal: o.getString('meal') ?? '', status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, items: items, createdAt: o.getNumber('createdAt') ?? 0, log: log })
+					}
+				}
+			}
+		}
+		return list
+	}
+	// 拉我的订单：token 失效（err 含『登录』）时清掉重登一次再拉
+	async function loadOrders() {
+		loading.value = true
+		let r = await requestJson('/cf-user', { action: 'myOrders' } as UTSJSONObject)
+		if (r !== null && r.getBoolean('ok') === false && (r.getString('err') ?? '').indexOf('登录') !== -1) {
+			uni.removeStorageSync('xk_user_token')
+			await ensureLogin()
+			r = await requestJson('/cf-user', { action: 'myOrders' } as UTSJSONObject)
+		}
+		if (r !== null && r.getBoolean('ok') === true) {
+			orders.value = parseOrders(r)
+		} else {
+			toast(r === null ? '网络异常，请重试' : (r.getString('err') ?? '订单加载失败，请重试'))
+		}
+		loading.value = false
+	}
+	function openStatus(order: MyOrder) { current.value = order; screen.value = 'status' }
+	function backList() { screen.value = 'list'; current.value = null }
+	async function refresh() { await loadOrders(); uni.stopPullDownRefresh() }
+
+	onLoad(() => { sessionSilentLogin() })
+	onShow(() => { sessionSilentLogin(); loadOrders() })
+	onPullDownRefresh(() => { refresh() })
+</script>
+
+<style>
+	.page { flex: 1; background-color: #F6F3EB; }
+	.scroll { flex: 1; }
+	.content { padding: 20px 20px 30px; }
+	/* ---------- 筛选 chips ---------- */
+	.filters { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 8px; }
+	.chip { border: 1px solid #E7E3D6; background-color: #FFFFFF; border-radius: 999px; padding: 6px 14px; margin: 0 8px 8px 0; }
+	.chip-on { border-color: #2F6B3F; background-color: #2F6B3F; }
+	.chip-text { font-size: 12px; font-weight: 600; color: #22301F; }
+	.chip-text-on { color: #FFFFFF; }
+	/* ---------- 订单卡 ---------- */
+	.card { background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E7E3D6; }
+	.state-text { display: block; text-align: center; padding: 30px 0; }
+	.empty { display: flex; align-items: center; justify-content: center; padding: 60px 0; }
+	.order-card { padding: 14px; margin-bottom: 12px; }
+	.o-head { display: flex; flex-direction: row; align-items: center; }
+	.o-no { font-size: 12px; font-weight: 700; color: #22301F; flex: 1; }
+	.meal-chip { margin-left: 8px; }
+	.meal-chip-text { font-size: 11px; font-weight: 600; color: #22301F; }
+	.st-badge { border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+	.st-pending { background-color: #FFFFFF; color: #22301F; border: 1px solid #E7E3D6; }
+	.st-cooking { background-color: #E9F1E7; color: #24522F; }
+	.st-ready { background-color: #2F6B3F; color: #FFFFFF; font-weight: 700; }
+	.st-cancel { background-color: #F3F7F1; color: #8C9689; }
+	.o-summary { display: block; font-size: 13px; color: #22301F; margin-top: 10px; }
+	.o-foot { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 10px; }
+	.o-total-row { display: flex; flex-direction: row; align-items: baseline; }
+	.o-total-label { font-size: 12px; color: #8C9689; margin-right: 6px; }
+	.o-total-num { font-size: 16px; }
+	.o-link { font-size: 13px; font-weight: 700; color: #2F6B3F; }
+	/* ---------- 状态时间线 ---------- */
+	.s-head { margin-top: 8px; display: flex; flex-direction: column; }
+	.s-no { font-size: 13px; font-weight: 700; color: #22301F; margin-top: 4px; }
+	.tl-card { margin-top: 14px; padding: 18px 16px; }
+	.cancel-row { padding-bottom: 10px; }
+	.cancel-text { color: #C8862A; font-size: 12.5px; font-weight: 700; }
+	.cancel-sep { margin-bottom: 14px; }
+	.tl-row { display: flex; flex-direction: row; }
+	.tl-rail { width: 26px; display: flex; flex-direction: column; align-items: center; }
+	.tl-dot { width: 22px; height: 22px; border-radius: 11px; background-color: #E9F1E7; display: flex; align-items: center; justify-content: center; }
+	.tl-dot-on { background-color: #2F6B3F; }
+	.tl-dot-char { color: #FFFFFF; font-size: 12px; font-weight: 700; }
+	.tl-line { width: 2px; flex: 1; background-color: #E9F1E7; margin: 2px 0; }
+	.tl-line-on { background-color: #2F6B3F; }
+	.tl-main { flex: 1; margin-left: 10px; padding-bottom: 18px; }
+	.tl-row:last-child .tl-main { padding-bottom: 2px; }
+	.tl-name { font-size: 14px; font-weight: 700; color: #22301F; }
+	.tl-time { display: block; font-size: 12px; color: #8C9689; margin-top: 3px; }
+	.tl-dim { color: #8C9689; }
+	.cta { width: 100%; margin-top: 18px; }
+	.toast-text { color: #FFFFFF; font-size: 13px; text-align: center; }
+</style>

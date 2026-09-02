@@ -99,13 +99,14 @@
 							<text class="oc-time">{{fmtTime(order.createdAt)}} 下单</text>
 							<text class="oc-total">合计 ¥{{fmt2(order.total)}}</text>
 						</view>
+						<text v-if="lastLogText(order.no) !== ''" class="oc-logtime">最近状态：{{lastLogText(order.no)}}</text>
 						<view v-if="order.status === 'pending' || order.status === 'cooking'" class="oc-actions">
 							<button class="act act-main" :disabled="busyNo !== ''" @click="setStatus(order.no, order.status === 'pending' ? 'cooking' : 'ready')">{{order.status === 'pending' ? '开始制作' : '出餐完成'}}</button>
 							<button class="act act-print" @click="printOrder(order)">打印</button>
 							<button class="act act-cancel" @click="cancelOrder(order.no)">取消</button>
 						</view>
 						<view v-else-if="order.status === 'ready'" class="oc-actions">
-							<view class="done-tip"><text class="done-tip-text">✓ 已出餐，等客取走</text></view>
+							<view class="done-tip"><text class="done-tip-text">✓ 已出餐 · 待配送</text></view>
 							<button class="act act-print" @click="printOrder(order)">打印</button>
 							<button class="act act-cancel" @click="cancelOrder(order.no)">取消</button>
 						</view>
@@ -114,6 +115,21 @@
 						</view>
 					</view>
 					<view v-if="orders.length === 0" class="order-card"><text class="muted">今日还没有订单</text></view>
+
+					<!-- 配送视图：可取餐=待配送，已送达=已完成，按取餐地点分组 -->
+					<view v-if="deliveryGroups.length > 0">
+						<text class="sec-title">配送 · 按地点</text>
+						<view v-for="g in deliveryGroups" :key="g.loc" class="deliv-card">
+							<view class="deliv-info">
+								<view class="deliv-locrow">
+									<text class="deliv-loc">{{g.loc}}</text>
+									<text v-if="g.readyNos.length === 0" class="deliv-badge">已送达</text>
+								</view>
+								<text class="deliv-meta">{{delivMeta(g)}}</text>
+							</view>
+							<button v-if="g.readyNos.length > 0" class="act-deliver" :disabled="deliveringLoc !== ''" @click="startDeliver(g)">{{deliveringLoc === g.loc ? '配送中…' : '开始配送'}}</button>
+						</view>
+					</view>
 				</view>
 
 				<!-- ===== 菜单 Tab ===== -->
@@ -191,6 +207,8 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 	type DishLine = { name: string; qty: number; amount: number }
 	type MealBlock = { key: string; title: string; state: string; stateCls: string; lines: DishLine[]; orderCount: number; gmv: number; customExtra: number }
 	type MenuDish = { id: string; category: string; name: string; desc: string; basePrice: number; canCustomPrice: boolean; image: string; soldOut: boolean }
+	// 配送分组：readyNos=待配送单号（可点「开始配送」），doneCount/doneTotal=组内已送达部分
+	type DeliverGroup = { loc: string; readyNos: string[]; doneCount: number; readyTotal: number; doneTotal: number }
 
 
 	const showGate = ref(false)
@@ -206,6 +224,8 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 	const toastMessage = ref('')
 	const busyNo = ref('')
 	const netLost = ref(false) // 后台轮询断连标记：失败亮横条不弹窗，恢复后自动消失
+	const deliveringLoc = ref('') // 正在批量标记送达的地点（防重复触发）
+	var orderLogs: Map<string, UTSJSONObject> = new Map() // 单号 → status_log（非响应式，随每次 summary 重建，渲染时 orders 变化会重新取）
 
 	// ---------- 菜单发布 ----------
 	const tab = ref('orders')
@@ -229,8 +249,8 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
 initPrinter(toast)
-	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '可取餐'; if (s === 'canceled') return '已取消'; return '待处理' }
-	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-ready'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '可取餐'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '待处理' }
+	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-ready'; if (s === 'delivered') return 'st-delivered'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
 
 	function menuDateStr(): string {
 		return menuDateMode.value === 'tomorrow' ? bjDateStrOf(Date.now() + 86400000) : bjDateStrOf(Date.now())
@@ -299,8 +319,8 @@ initPrinter(toast)
 		const blocks: MealBlock[] = []
 		blocks.push(parseMealBlock(meals, 'lunch', '午餐', bj))
 		blocks.push(parseMealBlock(meals, 'dinner', '晚餐', bj))
-		mealBlocks.value = blocks
 		const list: AdminOrder[] = []
+		const logs: Map<string, UTSJSONObject> = new Map()
 		const arr2 = data.getArray('orders')
 		if (arr2 !== null) {
 			for (let i = 0; i < arr2.length; i++) {
@@ -326,11 +346,29 @@ initPrinter(toast)
 					}
 					let meal = o.getString('meal') ?? 'lunch' // 老订单可能没有 meal 字段，按午餐处理
 					if (meal !== 'dinner') { meal = 'lunch' }
-					list.push({ no: o.getString('orderNo') ?? '', meal: meal, status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, note: note, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
+					const no = o.getString('orderNo') ?? ''
+					const slog = o.getJSON('status_log') // 云端 updateStatus 写入的各状态达成时间戳
+					if (slog instanceof UTSJSONObject) { logs.set(no, slog) }
+					list.push({ no: no, meal: meal, status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, note: note, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
 				}
 			}
 		}
 		orders.value = list
+		orderLogs = logs
+		// 餐次内有效订单全部已送达时，状态 chip 显示「已送达」
+		for (let i = 0; i < blocks.length; i++) {
+			const b = blocks[i]
+			let active = 0
+			let doneCnt = 0
+			for (let j = 0; j < list.length; j++) {
+				const o2 = list[j]
+				if (o2.meal !== b.key || o2.status === 'canceled') { continue }
+				active++
+				if (o2.status === 'delivered') { doneCnt++ }
+			}
+			if (active > 0 && doneCnt === active) { b.state = '已送达'; b.stateCls = 'badge-delivered' }
+		}
+		mealBlocks.value = blocks
 	}
 
 	async function loadSummary() {
@@ -406,6 +444,87 @@ initPrinter(toast)
 			content: '确定取消 ' + no + ' 吗？取消后不计入今日汇总。',
 			success: (res) => { if (res.confirm === true) { setStatus(no, 'canceled') } }
 		})
+	}
+
+	// ---------- 配送视图 ----------
+	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
+
+	// 北京时间 MM-DD HH:mm（与 bjDateStrOf 同口径：平移到北京墙上钟后按 UTC 读）
+	function fmtBjMDHM(ms: number): string {
+		const d = new Date(ms + (480 + new Date(ms).getTimezoneOffset()) * 60000)
+		return pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes())
+	}
+
+	// 订单卡上的最后状态时间：取 status_log 里时间戳最大的状态
+	function lastLogText(no: string): string {
+		const log = orderLogs.get(no)
+		if (!(log instanceof UTSJSONObject)) { return '' }
+		const keys: string[] = ['pending', 'cooking', 'ready', 'delivered', 'canceled']
+		const names: string[] = ['下单', '制作', '出餐', '送达', '取消']
+		let best = 0
+		let label = ''
+		for (let i = 0; i < keys.length; i++) {
+			const t = log.getNumber(keys[i]) ?? 0
+			if (t > best) { best = t; label = names[i] }
+		}
+		if (best <= 0) { return '' }
+		return label + ' ' + fmtBjMDHM(best)
+	}
+
+	// ready=待配送，delivered=已完成，按 customer.location 分组（空归「未填地点」），待配送组排前
+	const deliveryGroups = computed((): DeliverGroup[] => {
+		const list = orders.value
+		const grouped: DeliverGroup[] = []
+		const locs: string[] = []
+		for (let i = 0; i < list.length; i++) {
+			const o = list[i]
+			if (o.status !== 'ready' && o.status !== 'delivered') { continue }
+			const loc = o.location.trim() === '' ? '未填地点' : o.location.trim()
+			let idx = locs.indexOf(loc)
+			if (idx < 0) {
+				locs.push(loc)
+				const ng: DeliverGroup = { loc: loc, readyNos: [], doneCount: 0, readyTotal: 0, doneTotal: 0 }
+				grouped.push(ng)
+				idx = grouped.length - 1
+			}
+			const g = grouped[idx]
+			if (o.status === 'ready') { g.readyNos.push(o.no); g.readyTotal += o.total }
+			else { g.doneCount += 1; g.doneTotal += o.total }
+		}
+		const out: DeliverGroup[] = []
+		for (let i = 0; i < grouped.length; i++) { if (grouped[i].readyNos.length > 0) { out.push(grouped[i]) } }
+		for (let i = 0; i < grouped.length; i++) { if (grouped[i].readyNos.length === 0) { out.push(grouped[i]) } }
+		return out
+	})
+
+	function delivMeta(g: DeliverGroup): string {
+		const total = g.readyTotal + g.doneTotal
+		if (g.readyNos.length > 0 && g.doneCount > 0) { return '已送达 ' + g.doneCount + ' · 待配送 ' + g.readyNos.length + ' · 共 ¥' + fmt2(total) }
+		if (g.readyNos.length > 0) { return '待配送 ' + g.readyNos.length + ' 单 · ¥' + fmt2(total) }
+		return g.doneCount + ' 单 · ¥' + fmt2(total)
+	}
+
+	function startDeliver(g: DeliverGroup) {
+		if (deliveringLoc.value !== '') return
+		uni.showModal({
+			title: '开始配送',
+			content: '把「' + g.loc + '」的 ' + g.readyNos.length + ' 单标记为已送达？',
+			success: (res) => { if (res.confirm === true) { doDeliverGroup(g.loc, g.readyNos) } }
+		})
+	}
+
+	// 逐单调 updateStatus status='delivered'，结束后提示并刷新汇总（部分失败也刷新，成功的先生效）
+	async function doDeliverGroup(loc: string, nos: string[]) {
+		deliveringLoc.value = loc
+		let okCount = 0
+		for (let i = 0; i < nos.length; i++) {
+			const result = await requestJson('/cf-admin', { password: pass, action: 'updateStatus', orderNo: nos[i], status: 'delivered' } as UTSJSONObject)
+			if (result !== null && result.getBoolean('ok') === true) { okCount++ }
+		}
+		deliveringLoc.value = ''
+		if (okCount === nos.length) { toast('该地点 ' + okCount + ' 单已标记送达') }
+		else { toast('已送达 ' + okCount + '/' + nos.length + ' 单，未成功的可重试') }
+		loadSummary()
 	}
 
 	// ================= 菜单发布 =================
@@ -647,143 +766,155 @@ initPrinter(toast)
 </script>
 
 <style>
-	.page { flex: 1; background-color: #F2F3EF; color: #1C1917; }
-	.net-lost { margin: 12rpx 24rpx 0; padding: 12rpx 20rpx; background-color: #FEF3C7; border-radius: 12rpx; }
-	.net-lost-text { font-size: 24rpx; color: #92400E; }
+	.page { flex: 1; background-color: #F6F3EB; color: #22301F; }
+	.net-lost { margin: 12rpx 24rpx 0; padding: 12rpx 20rpx; background-color: #1D4226; border-radius: 12rpx; }
+	.net-lost-text { font-size: 24rpx; color: #F6F3EB; }
 	.scroll { flex: 1; }
 	.content { padding: 24px 16px 36px; }
-	.muted { color: #6a6762; font-size: 12px; }
+	.muted { color: #8C9689; font-size: 12px; }
 	/* ---------- 口令门 ---------- */
 	.gate { flex: 1; display: flex; align-items: center; justify-content: center; padding: 0 28px; }
-	.gate-card { width: 100%; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 18px; padding: 28px 20px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 22px rgba(28,25,23,.08); }
-	.seal { width: 46px; height: 46px; border-radius: 10px; background-color: #C2410C; display: flex; align-items: center; justify-content: center; transform: rotate(4deg); box-shadow: 0 6px 14px rgba(194,65,12,.35); }
-	.seal-char { color: #FFFEFB; font-family: serif; font-size: 24px; font-weight: 900; }
-	.gate-title { display: block; font-family: serif; font-size: 21px; font-weight: 900; letter-spacing: .12em; margin-top: 12px; }
-	.gate-sub { display: block; color: #8A8F82; font-size: 11.5px; margin-top: 6px; }
-	.gate-input { width: 100%; height: 46px; box-sizing: border-box; padding: 0 12px; background-color: #F2F3EF; border: 1px solid #E7E3DA; border-radius: 11px; font-size: 15px; margin-top: 18px; text-align: center; }
-	.ph { color: #B8B2A8; }
-	.gate-err { color: #C2410C; font-size: 12px; font-weight: 600; margin-top: 10px; }
+	.gate-card { width: 100%; background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 16px; padding: 28px 20px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 22px rgba(34,48,31,.08); }
+	.seal { width: 46px; height: 46px; border-radius: 10px; background-color: #2F6B3F; display: flex; align-items: center; justify-content: center; transform: rotate(4deg); box-shadow: 0 6px 14px rgba(47,107,63,.35); }
+	.seal-char { color: #FFFFFF; font-family: serif; font-size: 24px; font-weight: 900; }
+	.gate-title { display: block; font-family: serif; font-size: 21px; font-weight: 900; letter-spacing: .12em; margin-top: 12px; color: #22301F; }
+	.gate-sub { display: block; color: #8C9689; font-size: 11.5px; margin-top: 6px; }
+	.gate-input { width: 100%; height: 46px; box-sizing: border-box; padding: 0 12px; background-color: #F3F7F1; border: 1px solid #E7E3D6; border-radius: 11px; font-size: 15px; margin-top: 18px; text-align: center; color: #22301F; }
+	.ph { color: #8C9689; }
+	.gate-err { color: #24522F; font-size: 12px; font-weight: 600; margin-top: 10px; }
 	/* ---------- 通用按钮 ---------- */
-	.primary { width: 100%; height: 46px; background-color: #C2410C; background-image: linear-gradient(180deg, #D4511B, #C2410C 55%, #9A3412); color: #FFFEFB; border: 0; border-radius: 13px; font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-top: 16px; box-shadow: 0 8px 18px rgba(194,65,12,.3); }
+	.primary { width: 100%; height: 46px; background-color: #2F6B3F; background-image: linear-gradient(180deg, #2F6B3F, #24522F 55%, #1D4226); color: #FFFFFF; border: 0; border-radius: 13px; font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-top: 16px; box-shadow: 0 8px 18px rgba(47,107,63,.3); }
 	/* ---------- 头部 ---------- */
 	.header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-	.page-title { display: block; font-family: serif; font-size: 24px; font-weight: 900; letter-spacing: .1em; }
-	.header-sub { display: block; font-family: monospace; font-size: 11px; color: #8A8F82; margin-top: 4px; }
+	.page-title { display: block; font-family: serif; font-size: 24px; font-weight: 900; letter-spacing: .1em; color: #22301F; }
+	.header-sub { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 4px; }
 	.header-btns { display: flex; flex-direction: row; align-items: center; }
-	.refresh { width: 64px; height: 36px; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 999px; font-size: 13px; color: #57534E; padding: 0; line-height: 34px; margin-left: 8px; }
+	.refresh { width: 64px; height: 36px; background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 999px; font-size: 13px; color: #24522F; padding: 0; line-height: 34px; margin-left: 8px; }
 	/* ---------- Tab ---------- */
-	.tabs { display: flex; flex-direction: row; margin-top: 16px; background-color: #EDEAE3; border-radius: 12px; padding: 3px; }
+	.tabs { display: flex; flex-direction: row; margin-top: 16px; background-color: #E9F1E7; border-radius: 12px; padding: 3px; }
 	.tab { flex: 1; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-	.tab-on { background-color: #FFFEFB; box-shadow: 0 2px 6px rgba(28,25,23,.08); }
-	.tab-text { font-size: 14px; font-weight: 600; color: #79716B; }
-	.tab-text-on { color: #C2410C; }
+	.tab-on { background-color: #2F6B3F; box-shadow: 0 2px 6px rgba(47,107,63,.25); }
+	.tab-text { font-size: 14px; font-weight: 600; color: #8C9689; }
+	.tab-text-on { color: #FFFFFF; font-weight: 700; }
 	/* ---------- 蓝牙面板 ---------- */
-	.bt-panel { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(28,25,23,.05); }
+	.bt-panel { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 16px; padding: 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(34,48,31,.05); }
 	.bt-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-	.bt-title { font-size: 15px; font-weight: 800; }
-	.bt-close { padding: 4px 10px; border: 1px solid #E7E3DA; border-radius: 999px; }
-	.bt-close-text { font-size: 12px; color: #79716B; }
-	.bt-status { display: block; font-family: monospace; font-size: 12px; color: #57534E; margin-top: 8px; }
-	.bt-scan { width: 100%; height: 40px; border-radius: 11px; background-color: #1C1917; color: #FDBA74; font-size: 13.5px; font-weight: 700; border: 0; line-height: 40px; padding: 0; margin: 10px 0 0 0; }
-	.bt-dev { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding: 10px 2px; border-bottom: 1px dashed #E7E3DA; }
-	.bt-dev-name { font-size: 14px; font-weight: 600; }
-	.bt-dev-conn { font-size: 12px; color: #C2410C; font-weight: 700; }
-	.bt-tip { display: block; font-size: 11.5px; color: #8A8F82; margin-top: 8px; }
+	.bt-title { font-size: 15px; font-weight: 800; color: #22301F; }
+	.bt-close { padding: 4px 10px; border: 1px solid #E7E3D6; border-radius: 999px; }
+	.bt-close-text { font-size: 12px; color: #8C9689; }
+	.bt-status { display: block; font-family: monospace; font-size: 12px; color: #24522F; margin-top: 8px; }
+	.bt-scan { width: 100%; height: 40px; border-radius: 11px; background-color: #24522F; color: #E9F1E7; font-size: 13.5px; font-weight: 700; border: 0; line-height: 40px; padding: 0; margin: 10px 0 0 0; }
+	.bt-dev { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding: 10px 2px; border-bottom: 1px dashed #E7E3D6; }
+	.bt-dev-name { font-size: 14px; font-weight: 600; color: #22301F; }
+	.bt-dev-conn { font-size: 12px; color: #2F6B3F; font-weight: 700; }
+	.bt-tip { display: block; font-size: 11.5px; color: #8C9689; margin-top: 8px; }
 	/* ---------- 汇总卡 ---------- */
-	.sum-card { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(28,25,23,.05); }
-	.sum-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px dashed #E7E3DA; }
-	.sum-date { font-family: serif; font-size: 20px; font-weight: 900; letter-spacing: .06em; }
+	.sum-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 16px; padding: 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(34,48,31,.05); }
+	.sum-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px dashed #E7E3D6; }
+	.sum-date { font-family: serif; font-size: 20px; font-weight: 900; letter-spacing: .06em; color: #22301F; }
 	.sum-badge { border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
-	.badge-cut { background-color: #1C1917; color: #FDBA74; }
-	.badge-live { background-color: #FDF1E8; color: #C2410C; }
-	.badge-ready { background-color: #E8F6EC; color: #2E7D32; }
-	.badge-closed { background-color: #EDEAE3; color: #79716B; }
-	.line { display: flex; flex-direction: row; align-items: center; padding: 9px 0; border-bottom: 1px dashed #E7E3DA; }
-	.line-name { flex: 1; font-size: 14px; font-weight: 600; color: #44403C; }
-	.line-qty { font-family: monospace; font-size: 13px; color: #79716B; }
-	.line-amount { font-family: monospace; font-size: 14px; font-weight: 800; color: #1C1917; margin-left: 14px; min-width: 72px; text-align: right; }
+	.badge-cut { background-color: #1D4226; color: #E9F1E7; }
+	.badge-live { background-color: #F3F7F1; color: #2F6B3F; }
+	.badge-ready { background-color: #2F6B3F; color: #FFFFFF; }
+	.badge-closed { background-color: #E7E3D6; color: #8C9689; }
+	.badge-delivered { background-color: #24522F; color: #F6F3EB; }
+	.line { display: flex; flex-direction: row; align-items: center; padding: 9px 0; border-bottom: 1px dashed #E7E3D6; }
+	.line-name { flex: 1; font-size: 14px; font-weight: 600; color: #22301F; }
+	.line-qty { font-family: monospace; font-size: 13px; color: #8C9689; }
+	.line-amount { font-family: monospace; font-size: 14px; font-weight: 800; color: #22301F; margin-left: 14px; min-width: 72px; text-align: right; }
 	.sum-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-top: 10px; }
-	.sum-meta { font-size: 12px; color: #79716B; }
-	.sum-total { font-family: monospace; font-size: 16px; font-weight: 800; color: #C2410C; }
+	.sum-meta { font-size: 12px; color: #8C9689; font-weight: 700; }
+	.sum-total { font-family: monospace; font-size: 17px; font-weight: 900; color: #2F6B3F; }
 	.meal-block { margin-top: 12px; }
-	.meal-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px dashed #E7E3DA; }
-	.meal-title { font-size: 15px; font-weight: 800; letter-spacing: .06em; }
-	.sec-title { display: block; color: #8A8F82; font-size: 11px; font-weight: 700; letter-spacing: .2em; margin: 18px 2px 8px; }
+	.meal-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px dashed #E7E3D6; }
+	.meal-title { font-size: 15px; font-weight: 800; letter-spacing: .06em; color: #22301F; }
+	.sec-title { display: block; color: #8C9689; font-size: 11px; font-weight: 700; letter-spacing: .2em; margin: 18px 2px 8px; }
 	/* ---------- 订单卡 ---------- */
-	.order-card { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 16px; padding: 13px 14px; margin-bottom: 12px; box-shadow: 0 6px 14px rgba(28,25,23,.05); }
+	.order-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 16px; padding: 13px 14px; margin-bottom: 12px; box-shadow: 0 6px 14px rgba(34,48,31,.05); }
 	.order-cancel { opacity: .55; }
 	.oc-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-	.oc-no { font-family: monospace; font-size: 13px; font-weight: 800; letter-spacing: .04em; }
+	.oc-no { font-family: monospace; font-size: 13px; font-weight: 800; letter-spacing: .04em; color: #22301F; }
 	.oc-no-row { display: flex; flex-direction: row; align-items: center; }
 	.oc-meal { border-radius: 7px; padding: 2px 8px; font-size: 10.5px; font-weight: 700; margin-left: 8px; }
-	.meal-lunch { background-color: #FDF1E8; color: #C2410C; }
-	.meal-dinner { background-color: #1C1917; color: #FDBA74; }
+	.meal-lunch { background-color: #E9F1E7; color: #2F6B3F; }
+	.meal-dinner { background-color: #1D4226; color: #E9F1E7; }
 	.oc-status { border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
-	.st-pending { background-color: #FDF1E8; color: #C2410C; }
-	.st-cooking { background-color: #1C1917; color: #FDBA74; }
-	.st-ready { background-color: #E8F6EC; color: #2E7D32; }
-	.st-cancel { background-color: #EDEAE3; color: #79716B; }
+	.st-pending { background-color: #F3F7F1; color: #2F6B3F; }
+	.st-cooking { background-color: #1D4226; color: #E9F1E7; }
+	.st-ready { background-color: #E9F1E7; color: #2F6B3F; }
+	.st-delivered { background-color: #2F6B3F; color: #FFFFFF; }
+	.st-cancel { background-color: #E7E3D6; color: #8C9689; }
 	.oc-cust { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; margin-top: 9px; }
-	.oc-name { font-size: 14px; font-weight: 700; }
-	.oc-phone { font-family: monospace; font-size: 12px; color: #79716B; margin-left: 9px; }
-	.oc-note { display: block; color: #9A3412; font-size: 12px; margin-top: 5px; }
-	.oc-items { margin-top: 8px; border-top: 1px dashed #E7E3DA; }
+	.oc-name { font-size: 14px; font-weight: 700; color: #22301F; }
+	.oc-phone { font-family: monospace; font-size: 12px; color: #8C9689; margin-left: 9px; }
+	.oc-note { display: block; color: #24522F; font-size: 12px; margin-top: 5px; }
+	.oc-items { margin-top: 8px; border-top: 1px dashed #E7E3D6; }
 	.oc-item { display: flex; flex-direction: row; justify-content: space-between; padding: 6px 0; }
-	.oc-item-name { font-size: 13px; color: #44403C; }
-	.oc-item-price { font-family: monospace; font-size: 13px; color: #1C1917; }
-	.oc-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; border-top: 1px dashed #E7E3DA; padding-top: 9px; margin-top: 2px; }
-	.oc-time { font-family: monospace; font-size: 11.5px; color: #8A8F82; }
-	.oc-total { font-family: monospace; font-size: 15px; font-weight: 800; color: #C2410C; }
+	.oc-item-name { font-size: 13px; color: #22301F; }
+	.oc-item-price { font-family: monospace; font-size: 13px; color: #22301F; }
+	.oc-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; border-top: 1px dashed #E7E3D6; padding-top: 9px; margin-top: 2px; }
+	.oc-time { font-family: monospace; font-size: 11.5px; color: #8C9689; }
+	.oc-total { font-family: monospace; font-size: 15px; font-weight: 800; color: #2F6B3F; }
+	.oc-logtime { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 6px; }
 	.oc-actions { display: flex; flex-direction: row; align-items: center; margin-top: 11px; }
 	.act { height: 40px; border-radius: 11px; font-size: 13.5px; font-weight: 700; margin: 0; padding: 0; line-height: 38px; }
-	.act-main { flex: 1; background-color: #C2410C; background-image: linear-gradient(180deg, #D4511B, #C2410C 55%, #9A3412); color: #FFFEFB; border: 0; box-shadow: 0 4px 10px rgba(194,65,12,.28); }
-	.act-main[disabled] { background-color: #C9C4BB; background-image: none; box-shadow: none; }
-	.act-print { width: 64px; background-color: #FFFEFB; border: 1px solid #E7E3DA; color: #57534E; margin-left: 9px; }
-	.act-cancel { width: 86px; background-color: #FFFEFB; border: 1px solid #E7E3DA; color: #79716B; margin-left: 9px; }
-	.done-tip { flex: 1; background-color: #E8F6EC; border-radius: 11px; height: 40px; display: flex; align-items: center; justify-content: center; }
-	.done-tip-text { color: #2E7D32; font-size: 13px; font-weight: 700; }
+	.act-main { flex: 1; background-color: #2F6B3F; background-image: linear-gradient(180deg, #2F6B3F, #24522F 55%, #1D4226); color: #FFFFFF; border: 0; box-shadow: 0 4px 10px rgba(47,107,63,.28); }
+	.act-main[disabled] { background-color: #E7E3D6; background-image: none; box-shadow: none; color: #8C9689; }
+	.act-print { width: 64px; background-color: #FFFFFF; border: 1px solid #E7E3D6; color: #24522F; margin-left: 9px; }
+	.act-cancel { width: 86px; background-color: #FFFFFF; border: 1px solid #E7E3D6; color: #8C9689; margin-left: 9px; }
+	.done-tip { flex: 1; background-color: #E9F1E7; border-radius: 11px; height: 40px; display: flex; align-items: center; justify-content: center; }
+	.done-tip-text { color: #2F6B3F; font-size: 13px; font-weight: 700; }
+	/* ---------- 配送视图 ---------- */
+	.deliv-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; display: flex; flex-direction: row; align-items: center; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
+	.deliv-info { flex: 1; }
+	.deliv-locrow { display: flex; flex-direction: row; align-items: center; }
+	.deliv-loc { font-size: 15px; font-weight: 800; color: #22301F; }
+	.deliv-badge { background-color: #24522F; color: #F6F3EB; border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; margin-left: 8px; }
+	.deliv-meta { display: block; font-family: monospace; font-size: 12px; color: #8C9689; margin-top: 5px; }
+	.act-deliver { width: 96px; height: 40px; background-color: #2F6B3F; background-image: linear-gradient(180deg, #2F6B3F, #24522F); color: #FFFFFF; border: 0; border-radius: 11px; font-size: 13px; font-weight: 700; line-height: 40px; padding: 0; margin: 0; box-shadow: 0 4px 10px rgba(47,107,63,.28); }
+	.act-deliver[disabled] { background-color: #E7E3D6; background-image: none; box-shadow: none; color: #8C9689; }
 	/* ---------- 菜单发布 ---------- */
 	.menu-head { margin-top: 14px; }
 	.pill-row { display: flex; flex-direction: row; align-items: center; }
-	.pill { padding: 7px 14px; border-radius: 999px; background-color: #FFFEFB; border: 1px solid #E7E3DA; margin-right: 8px; }
-	.pill-on { background-color: #1C1917; border-color: #1C1917; }
-	.pill-text { font-size: 12.5px; color: #57534E; font-weight: 600; }
-	.pill-text-on { color: #FDBA74; }
-	.menu-date-hint { display: block; font-family: monospace; font-size: 11px; color: #8A8F82; margin-top: 8px; }
-	.dish-card { background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 14px; padding: 11px 13px; margin-top: 10px; box-shadow: 0 4px 10px rgba(28,25,23,.04); }
+	.pill { padding: 7px 14px; border-radius: 999px; background-color: #FFFFFF; border: 1px solid #E7E3D6; margin-right: 8px; }
+	.pill-on { background-color: #2F6B3F; border-color: #2F6B3F; }
+	.pill-text { font-size: 12.5px; color: #24522F; font-weight: 600; }
+	.pill-text-on { color: #FFFFFF; }
+	.menu-date-hint { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 8px; }
+	.dish-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 11px 13px; margin-top: 10px; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
 	.dish-off { opacity: .55; }
 	.dc-row1 { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-	.dc-name { font-size: 14.5px; font-weight: 700; }
-	.dc-price { font-family: monospace; font-size: 14px; font-weight: 800; color: #C2410C; }
+	.dc-name { font-size: 14.5px; font-weight: 700; color: #22301F; }
+	.dc-price { font-family: monospace; font-size: 14px; font-weight: 800; color: #2F6B3F; }
 	.dc-row2 { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; margin-top: 6px; }
-	.dc-cat { font-size: 11px; color: #79716B; border: 1px solid #E7E3DA; border-radius: 6px; padding: 2px 7px; }
+	.dc-cat { font-size: 11px; color: #8C9689; border: 1px solid #E7E3D6; border-radius: 6px; padding: 2px 7px; }
 	.dc-badge { font-size: 10.5px; border-radius: 6px; padding: 2px 7px; margin-left: 6px; font-weight: 700; }
-	.dc-badge-custom { background-color: #FDF1E8; color: #C2410C; }
-	.dc-badge-off { background-color: #1C1917; color: #FDBA74; }
-	.dc-ops { display: flex; flex-direction: row; margin-top: 9px; border-top: 1px dashed #E7E3DA; padding-top: 9px; }
-	.dc-op { padding: 5px 12px; background-color: #F2F3EF; border-radius: 8px; margin-right: 8px; }
-	.dc-op-text { font-size: 12px; color: #57534E; font-weight: 600; }
-	.dc-op-del { color: #C2410C; }
-	.add-dish { height: 46px; border: 1px dashed #C9C4BB; border-radius: 14px; margin-top: 12px; display: flex; align-items: center; justify-content: center; }
-	.add-dish-text { color: #79716B; font-size: 13.5px; font-weight: 600; }
-	.edit-card { background-color: #FDF6EF; border: 1px solid #E7C9A9; border-radius: 16px; padding: 14px; margin-top: 12px; }
-	.edit-title { display: block; font-size: 13px; font-weight: 800; color: #9A3412; letter-spacing: .08em; }
+	.dc-badge-custom { background-color: #E9F1E7; color: #2F6B3F; }
+	.dc-badge-off { background-color: #1D4226; color: #E9F1E7; }
+	.dc-ops { display: flex; flex-direction: row; margin-top: 9px; border-top: 1px dashed #E7E3D6; padding-top: 9px; }
+	.dc-op { padding: 5px 12px; background-color: #F3F7F1; border-radius: 8px; margin-right: 8px; }
+	.dc-op-text { font-size: 12px; color: #24522F; font-weight: 600; }
+	.dc-op-del { color: #24522F; font-weight: 700; }
+	.add-dish { height: 46px; border: 1px dashed rgba(47,107,63,.4); border-radius: 14px; margin-top: 12px; display: flex; align-items: center; justify-content: center; }
+	.add-dish-text { color: #2F6B3F; font-size: 13.5px; font-weight: 600; }
+	.edit-card { background-color: #F3F7F1; border: 1px solid rgba(47,107,63,.35); border-radius: 16px; padding: 14px; margin-top: 12px; }
+	.edit-title { display: block; font-size: 13px; font-weight: 800; color: #24522F; letter-spacing: .08em; }
 	.edit-row { display: flex; flex-direction: row; align-items: center; margin-top: 10px; }
-	.edit-label { width: 42px; font-size: 12.5px; color: #79716B; }
-	.edit-input { flex: 1; height: 40px; box-sizing: border-box; padding: 0 10px; background-color: #FFFEFB; border: 1px solid #E7E3DA; border-radius: 10px; font-size: 14px; }
+	.edit-label { width: 42px; font-size: 12.5px; color: #8C9689; }
+	.edit-input { flex: 1; height: 40px; box-sizing: border-box; padding: 0 10px; background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 10px; font-size: 14px; color: #22301F; }
 	.edit-chips { display: flex; flex-direction: row; margin-top: 12px; }
-	.chip-t { padding: 7px 13px; border-radius: 999px; background-color: #FFFEFB; border: 1px solid #E7E3DA; margin-right: 8px; }
-	.chip-t-on { background-color: #C2410C; border-color: #C2410C; }
-	.chip-t-text { font-size: 12.5px; color: #57534E; font-weight: 600; }
-	.chip-t-text-on { color: #FFFEFB; }
+	.chip-t { padding: 7px 13px; border-radius: 999px; background-color: #FFFFFF; border: 1px solid #E7E3D6; margin-right: 8px; }
+	.chip-t-on { background-color: #2F6B3F; border-color: #2F6B3F; }
+	.chip-t-text { font-size: 12.5px; color: #24522F; font-weight: 600; }
+	.chip-t-text-on { color: #FFFFFF; }
 	.edit-btns { display: flex; flex-direction: row; align-items: center; margin-top: 13px; }
-	.edit-img { width: 44px; height: 44px; border-radius: 10px; background-color: #E7E4DC; }
+	.edit-img { width: 44px; height: 44px; border-radius: 10px; background-color: #E7E3D6; }
 	.edit-img-empty { display: flex; align-items: center; justify-content: center; }
-	.edit-img-empty-t { font-size: 10px; color: #A8A29B; }
-	.act-gen { flex: 1; margin-left: 10px; background-color: #FFFEFB; border: 1px solid #E7C9A9; color: #9A3412; }
-	.act-gen[disabled] { color: #A8A29B; }
+	.edit-img-empty-t { font-size: 10px; color: #8C9689; }
+	.act-gen { flex: 1; margin-left: 10px; background-color: #FFFFFF; border: 1px solid rgba(47,107,63,.35); color: #2F6B3F; }
+	.act-gen[disabled] { color: #8C9689; }
 	.pub-row { display: flex; flex-direction: row; align-items: center; margin-top: 16px; }
-	.pub-hint { flex: 1; font-size: 11px; color: #8A8F82; margin-left: 4px; }
+	.pub-hint { flex: 1; font-size: 11px; color: #8C9689; margin-left: 4px; }
 	.footer-space { height: 20px; }
-	.toast { position: fixed; left: 20%; right: 20%; bottom: 100px; background-color: rgba(28,25,23,.88); color: #FFFEFB; padding: 10px; border-radius: 10px; text-align: center; font-size: 13px; }
+	.toast { position: fixed; left: 20%; right: 20%; bottom: 100px; background-color: rgba(29,66,38,.92); color: #F6F3EB; padding: 10px; border-radius: 10px; text-align: center; font-size: 13px; }
 </style>

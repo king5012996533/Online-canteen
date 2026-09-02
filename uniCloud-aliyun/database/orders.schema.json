@@ -23,7 +23,11 @@
     },
     "status": {
       "bsonType": "string",
-      "description": "状态：pending / cooking / ready / canceled"
+      "description": "状态：pending / cooking / ready / delivered / canceled"
+    },
+    "status_log": {
+      "bsonType": "object",
+      "description": "各状态达成时间戳 {cooking, ready, delivered, canceled}，供用户端状态时间线展示"
     },
     "items": {
       "bsonType": "array",
