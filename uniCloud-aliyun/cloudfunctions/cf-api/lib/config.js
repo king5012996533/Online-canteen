@@ -26,10 +26,10 @@ const IMG_API_KEY = 'sk-RhCNZ9afpFdNlqZyth53Cq37MrFmNAWP7wawmr5Pk1GSLvqs';
 const IMG_MODEL = 'gpt-image-2';
 
 // ---------- 微信小程序登录 ----------
-const WX_APPID = 'wxa9fac6425421ee50';
-// AppSecret 占位符：到微信公众平台「开发管理 → 开发设置」复制 AppSecret 替换，
-// 不替换的话 login 会统一按"微信登录失败，请稍后重试"处理。
-const WX_APP_SECRET = 'fb97a88b4ab11deb0c22f45ab88cf8db';
+const WX_APPID = 'wx741ea5af08011b17';
+// AppSecret：新主体小程序（wx741ea5af08011b17）的密钥。
+// 换密钥后旧的 users 记录（openid 属于旧 AppID）不再匹配新登录，正式上线前建议清掉测试数据。
+const WX_APP_SECRET = '7dec6b6d7a9f7555fd0688d92c106bbb';
 
 module.exports = {
 	ADMIN_PASSWORD: ADMIN_PASSWORD,
