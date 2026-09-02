@@ -30,11 +30,11 @@
 				<text class="row-val">{{form.phone || '未填写'}}</text>
 				<text class="row-arr">›</text>
 			</view>
-			<view class="menu-row" @click="feedbackTip">
+			<button class="menu-row contact-row" open-type="contact">
 				<image class="row-ic" src="/static/icons/chat.png" mode="aspectFit"></image>
 				<text class="row-text">意见反馈</text>
 				<text class="row-arr">›</text>
-			</view>
+			</button>
 			<view class="menu-row" @click="aboutTip">
 				<image class="row-ic" src="/static/icons/info.png" mode="aspectFit"></image>
 				<text class="row-text">关于我们</text>
@@ -53,7 +53,18 @@
 		</view>
 
 		<!-- 退出登录 -->
-		<view class="card out-card" @click="logoutTip"><text class="out-text">退出登录</text></view>
+		<view class="card out-card" @click="logout"><text class="out-text">退出登录</text></view>
+
+		<!-- 关于我们 -->
+		<view v-if="aboutSheet" class="sheet-mask"><view class="sheet">
+			<text class="sheet-title">关于我们</text>
+			<text class="about-name">富记线上饭堂</text>
+			<text class="about-line">写字楼现炒午餐 · 每日菜单 · 按价格选份量</text>
+			<view class="g-hairline about-line-sep"></view>
+			<view class="about-row"><text class="about-k">午餐配送</text><text class="about-v">{{cfgOf('lunch').deliveryLabel}}</text></view>
+			<view class="about-row"><text class="about-k">晚餐配送</text><text class="about-v">{{cfgOf('dinner').deliveryLabel}}</text></view>
+			<button class="g-btn-primary about-btn" @click="aboutSheet = false">知道了</button>
+		</view></view>
 
 		<view v-if="toastMessage !== ''" class="g-toast"><text class="toast-text">{{toastMessage}}</text></view>
 	</view>
@@ -61,6 +72,7 @@
 
 <script setup lang="uts">
 	import { requestJson } from '../../common/http.uts'
+	import { cfgOf } from '../../common/meals.uts'
 
 	type OrderItem = { name: string; pay: number; qty: number }
 	type MyOrder = { orderNo: string; status: string; total: number; items: OrderItem[]; createdAt: number }
@@ -76,6 +88,7 @@
 	const toastMessage = ref('')
 	// 编辑态：点「配送地址/联系电话」行展开常用信息编辑卡
 	const editing = ref(false)
+	const aboutSheet = ref(false)
 
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
 	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
@@ -84,9 +97,9 @@
 		const d = new Date(ms + (480 + new Date(ms).getTimezoneOffset()) * 60000)
 		return pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes())
 	}
-	// 状态文案：4.0 配送语义（ready=配送中），delivered 为云端新增状态
-	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '待处理' }
-	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready' || s === 'delivered') return 'st-ready'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+	// 状态文案：4.0 配送语义（ready=待配送，delivering=配送中），delivered 为云端新增状态
+	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '待配送'; if (s === 'delivering') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '待处理' }
+	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-cooking'; if (s === 'delivering') return 'st-ready'; if (s === 'delivered') return 'st-delivered'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
 
 	// 用户卡文案
 	const userDisplayName = computed((): string => {
@@ -105,9 +118,16 @@
 
 	function toggleEdit() { editing.value = !editing.value }
 	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }
-	function feedbackTip() { toast('感谢反馈，请联系饭堂微信群') }
-	function aboutTip() { toast('富记线上饭堂 · 写字楼现炒午餐') }
-	function logoutTip() { toast('使用微信静默登录，无需手动退出') }
+	function aboutTip() { aboutSheet.value = true }
+	// 退出登录：清掉本地 token 与登录态；下次进入会自动重新静默登录
+	function logout() {
+		uni.removeStorageSync('xk_user_token')
+		loginOk.value = false
+		loginChecking.value = false
+		loginErr.value = ''
+		orders.value = []
+		toast('已退出，下次进入将自动重新登录')
+	}
 
 	// uni.login 回调转 Promise：拿微信登录 code（拿不到返回空串）
 	function getWxCode(): Promise<string> {
@@ -323,6 +343,21 @@
 	.form-field { margin-top: 12px; }
 	.form-label-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
 	.save-btn { width: 100%; border: 0; margin-top: 16px; }
+	/* ---------- 菜单行（意见反馈为微信客服会话按钮） ---------- */
+	.contact-row { background-color: #FFFFFF; border: 0; margin: 0; width: 100%; border-radius: 0; }
+	.menu-row:last-child { border-bottom: 0; }
+	.contact-row:last-child { border-bottom: 0; }
+	/* ---------- 关于我们 ---------- */
+	.sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background-color: rgba(20,20,24,0.32); display: flex; align-items: flex-end; }
+	.sheet { background-color: #FFFFFF; width: 100%; padding: 20px; border-radius: 22px 22px 0 0; }
+	.sheet-title { display: block; font-size: 20px; font-weight: 900; margin-bottom: 6px; color: #22301F; }
+	.about-name { display: block; font-size: 17px; font-weight: 900; color: #2F6B3F; margin-top: 8px; }
+	.about-line { display: block; font-size: 12px; color: #8C9689; margin-top: 4px; }
+	.about-line-sep { margin-top: 12px; }
+	.about-row { display: flex; flex-direction: row; justify-content: space-between; padding: 8px 0; }
+	.about-k { font-size: 12px; color: #8C9689; }
+	.about-v { font-size: 12px; font-weight: 700; color: #22301F; }
+	.about-btn { width: 100%; border: 0; margin-top: 14px; }
 	/* ---------- 退出登录 ---------- */
 	.out-card { margin-top: 18px; padding: 13px; display: flex; align-items: center; justify-content: center; }
 	.out-text { font-size: 13px; font-weight: 700; color: #8C9689; }

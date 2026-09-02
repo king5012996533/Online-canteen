@@ -275,7 +275,7 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 	type MealBlock = { key: string; title: string; state: string; stateCls: string; lines: DishLine[]; orderCount: number; gmv: number; customExtra: number }
 	type MenuDish = { id: string; category: string; name: string; desc: string; basePrice: number; canCustomPrice: boolean; image: string; soldOut: boolean }
 	// 配送分组：state=ready待配送/delivering配送中/done已送达；readyNos=待配送单号
-	type DelivGroup = { loc: string; state: string; readyNos: string[]; doneCount: number; readyTotal: number; doneTotal: number }
+	type DelivGroup = { loc: string; state: string; readyNos: string[]; deliveringNos: string[]; doneCount: number; readyTotal: number; deliveringTotal: number; doneTotal: number }
 	// 订单管理视图的地点分组
 	type OrderGroup = { loc: string; orders: AdminOrder[]; total: number }
 	// 热门菜品榜行（两餐 dishLines 合并）
@@ -295,7 +295,7 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 	const toastMessage = ref('')
 	const busyNo = ref('')
 	const netLost = ref(false) // 后台轮询断连标记：失败亮横条不弹窗，恢复后自动消失
-	const deliveringLoc = ref('') // 正在批量标记送达的地点（防重复触发）
+	const deliveringLoc = ref('') // 正在批量改状态的地点（防重复触发）
 	var orderLogs: Map<string, UTSJSONObject> = new Map() // 单号 → status_log（非响应式，随每次 summary 重建，渲染时 orders 变化会重新取）
 
 	// ---------- 视图切换 ----------
@@ -312,8 +312,6 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 	const orderFilter = ref('all') // all | pending | cooking | ready | delivered
 	const delivFilter = ref('ready') // ready | delivering | done
 	const expandedLoc = ref('') // 订单管理里展开的地点（单开）
-	const deliveringLocs = ref<string[]>([]) // 配送中的地点（持久化到 xk_delivering）
-
 	// ---------- 菜单发布 ----------
 	const menuDateMode = ref('today') // today | tomorrow
 	const menuDate = ref('')
@@ -335,8 +333,8 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
 initPrinter(toast)
-	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '可取餐'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '待处理' }
-	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-ready'; if (s === 'delivered') return 'st-delivered'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '待配送'; if (s === 'delivering') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '待处理' }
+	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-ready'; if (s === 'delivering') return 'st-cooking'; if (s === 'delivered') return 'st-delivered'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
 
 	function menuDateStr(): string {
 		return menuDateMode.value === 'tomorrow' ? bjDateStrOf(Date.now() + 86400000) : bjDateStrOf(Date.now())
@@ -558,26 +556,6 @@ initPrinter(toast)
 	}
 
 	// ---------- 配送管理 ----------
-	function saveDeliveringLocs() { uni.setStorageSync('xk_delivering', deliveringLocs.value) }
-
-	// 回前台/启动时恢复配送中地点（坏数据逐项过滤丢弃）
-	function restoreDeliveringLocs() {
-		const v = uni.getStorageSync('xk_delivering')
-		const arr: string[] = []
-		if (v instanceof Array) {
-			const raw = v as Array<any>
-			for (let i = 0; i < raw.length; i++) {
-				const s = raw[i]
-				if (s instanceof String || typeof s === 'string') { arr.push(s as string) }
-			}
-		}
-		deliveringLocs.value = arr
-	}
-
-	function removeDeliveringLoc(loc: string) {
-		const idx = deliveringLocs.value.indexOf(loc)
-		if (idx >= 0) { deliveringLocs.value.splice(idx, 1); saveDeliveringLocs() }
-	}
 
 	// ready/delivered 订单按 customer.location 分组（空归「未填地点」），按配送中→待配送→已送达排序，并按筛选过滤
 	const delivGroups = computed((): DelivGroup[] => {
@@ -586,23 +564,24 @@ initPrinter(toast)
 		const locs: string[] = []
 		for (let i = 0; i < list.length; i++) {
 			const o = list[i]
-			if (o.status !== 'ready' && o.status !== 'delivered') { continue }
+			if (o.status !== 'ready' && o.status !== 'delivering' && o.status !== 'delivered') { continue }
 			const loc = o.location.trim() === '' ? '未填地点' : o.location.trim()
 			let idx = locs.indexOf(loc)
 			if (idx < 0) {
 				locs.push(loc)
-				const ng: DelivGroup = { loc: loc, state: 'ready', readyNos: [], doneCount: 0, readyTotal: 0, doneTotal: 0 }
+				const ng: DelivGroup = { loc: loc, state: 'ready', readyNos: [], deliveringNos: [], doneCount: 0, readyTotal: 0, deliveringTotal: 0, doneTotal: 0 }
 				grouped.push(ng)
 				idx = grouped.length - 1
 			}
 			const g = grouped[idx]
 			if (o.status === 'ready') { g.readyNos.push(o.no); g.readyTotal += o.total }
+			else if (o.status === 'delivering') { g.deliveringNos.push(o.no); g.deliveringTotal += o.total }
 			else { g.doneCount += 1; g.doneTotal += o.total }
 		}
 		for (let i = 0; i < grouped.length; i++) {
 			const g = grouped[i]
-			if (g.readyNos.length === 0) { g.state = 'done' }
-			else if (deliveringLocs.value.indexOf(g.loc) >= 0) { g.state = 'delivering' }
+			if (g.deliveringNos.length > 0) { g.state = 'delivering' }
+			else if (g.readyNos.length === 0) { g.state = 'done' }
 			else { g.state = 'ready' }
 		}
 		const out: DelivGroup[] = []
@@ -618,43 +597,44 @@ initPrinter(toast)
 	function delivStateText(state: string): string { if (state === 'delivering') return '配送中'; if (state === 'done') return '已送达'; return '待配送' }
 
 	function delivMeta(g: DelivGroup): string {
-		const total = g.readyTotal + g.doneTotal
-		if (g.readyNos.length > 0 && g.doneCount > 0) { return '已送达 ' + g.doneCount + ' · 待配送 ' + g.readyNos.length + ' · 共 ¥' + fmt2(total) }
-		if (g.readyNos.length > 0) { return '待配送 ' + g.readyNos.length + ' 单 · ¥' + fmt2(total) }
-		return g.doneCount + ' 单 · ¥' + fmt2(total)
+		const total = g.readyTotal + g.deliveringTotal + g.doneTotal
+		const parts: string[] = []
+		if (g.doneCount > 0) { parts.push('已送达 ' + g.doneCount) }
+		if (g.deliveringNos.length > 0) { parts.push('配送中 ' + g.deliveringNos.length) }
+		if (g.readyNos.length > 0) { parts.push('待配送 ' + g.readyNos.length) }
+		if (parts.length === 0) { parts.push('0 单') }
+		return parts.join(' · ') + ' · 共 ¥' + fmt2(total)
 	}
 
-	// 开始配送：仅把地点标记为配送中（持久化），不动订单状态
+	// 开始配送：把该组待配送订单批量标记为 delivering（云端状态机持久化，全端一致）
 	function startDeliver(g: DelivGroup) {
 		if (deliveringLoc.value !== '') return
-		if (deliveringLocs.value.indexOf(g.loc) >= 0) return
-		deliveringLocs.value.push(g.loc)
-		saveDeliveringLocs()
-		toast('「' + g.loc + '」开始配送')
+		if (g.readyNos.length === 0) { toast('该地点没有待配送订单'); return }
+		doBatchStatus(g.loc, g.readyNos, 'delivering', '开始配送')
 	}
 
+	// 完成配送：把该组配送中订单批量标记为已送达
 	function finishDeliver(g: DelivGroup) {
 		if (deliveringLoc.value !== '') return
-		if (g.readyNos.length === 0) { toast('该地点没有待配送订单'); return }
+		if (g.deliveringNos.length === 0) { toast('该地点没有配送中的订单'); return }
 		uni.showModal({
 			title: '完成配送',
-			content: '把「' + g.loc + '」的 ' + g.readyNos.length + ' 单标记为已送达？',
-			success: (res) => { if (res.confirm === true) { doDeliverGroup(g.loc, g.readyNos) } }
+			content: '把「' + g.loc + '」的 ' + g.deliveringNos.length + ' 单标记为已送达？',
+			success: (res) => { if (res.confirm === true) { doBatchStatus(g.loc, g.deliveringNos, 'delivered', '完成配送') } }
 		})
 	}
 
-	// 逐单调 updateStatus status='delivered'，结束后移出配送中并刷新汇总（部分失败也刷新，成功的先生效）
-	async function doDeliverGroup(loc: string, nos: string[]) {
+	// 逐单调 updateStatus，结束后刷新汇总（部分失败也刷新，成功的先生效）
+	async function doBatchStatus(loc: string, nos: string[], status: string, actionLabel: string) {
 		deliveringLoc.value = loc
 		let okCount = 0
 		for (let i = 0; i < nos.length; i++) {
-			const result = await requestJson('/cf-admin', { password: pass, action: 'updateStatus', orderNo: nos[i], status: 'delivered' } as UTSJSONObject)
+			const result = await requestJson('/cf-admin', { password: pass, action: 'updateStatus', orderNo: nos[i], status: status } as UTSJSONObject)
 			if (result !== null && result.getBoolean('ok') === true) { okCount++ }
 		}
 		deliveringLoc.value = ''
-		removeDeliveringLoc(loc)
-		if (okCount === nos.length) { toast('该地点 ' + okCount + ' 单已标记送达') }
-		else { toast('已送达 ' + okCount + '/' + nos.length + ' 单，未成功的可重试') }
+		if (okCount === nos.length) { toast('「' + loc + '」' + okCount + ' 单已' + actionLabel) }
+		else { toast(actionLabel + ' ' + okCount + '/' + nos.length + ' 单，未成功的可重试') }
 		loadSummary()
 	}
 
@@ -971,8 +951,6 @@ initPrinter(toast)
 	}
 	schedulePoll()
 	onUnmounted(() => { if (autoTimer !== -1) { clearTimeout(autoTimer) } })
-	// 每次页面显示（含首次进入与切回）恢复「配送中」地点
-	onShow(() => { restoreDeliveringLocs() })
 </script>
 
 <style>

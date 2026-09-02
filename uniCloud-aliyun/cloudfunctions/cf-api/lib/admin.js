@@ -285,20 +285,20 @@ async function adminHandle(params, clientIP) {
 
 	if (params.action === 'updateStatus') {
 		const status = params.status;
-		if (status !== 'cooking' && status !== 'ready' && status !== 'delivered' && status !== 'canceled') {
+		if (status !== 'cooking' && status !== 'ready' && status !== 'delivering' && status !== 'delivered' && status !== 'canceled') {
 			return { ok: false, err: '非法状态' };
 		}
 		const orderNo = params.orderNo;
 		if (typeof orderNo !== 'string' || !orderNo) {
 			return { ok: false, err: '缺少订单号' };
 		}
-		// 状态机校验：pending→cooking|canceled；cooking→ready|canceled；ready→delivered|canceled；delivered/canceled 终态
+		// 状态机校验：pending→cooking|canceled；cooking→ready|canceled；ready→delivering|canceled；delivering→delivered|canceled；delivered/canceled 终态
 		const orderRes = await db.collection('orders').where({ order_no: orderNo }).limit(1).get();
 		if (!orderRes.data || orderRes.data.length === 0) {
 			return { ok: false, err: '订单不存在' };
 		}
 		const cur = orderRes.data[0].status;
-		const TRANSITIONS = { pending: ['cooking', 'canceled'], cooking: ['ready', 'canceled'], ready: ['delivered', 'canceled'], delivered: [], canceled: [] };
+		const TRANSITIONS = { pending: ['cooking', 'canceled'], cooking: ['ready', 'canceled'], ready: ['delivering', 'canceled'], delivering: ['delivered', 'canceled'], delivered: [], canceled: [] };
 		const allowed = TRANSITIONS[cur] || [];
 		if (allowed.indexOf(status) < 0) {
 			return { ok: false, err: '当前状态不能改为该状态' };

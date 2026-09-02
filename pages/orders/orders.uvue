@@ -60,8 +60,8 @@
 	import { cfgOf } from '../../common/meals.uts'
 
 	type OrderItem = { name: string; pay: number; qty: number }
-	// statusLog 展平成三个状态时间戳（0 = 未达成）
-	type OrderLog = { cooking: number; ready: number; delivered: number }
+	// statusLog 展平成各状态时间戳（0 = 未达成）
+	type OrderLog = { cooking: number; ready: number; delivering: number; delivered: number }
 	type MyOrder = { orderNo: string; meal: string; status: string; total: number; items: OrderItem[]; createdAt: number; log: OrderLog }
 	type TlStep = { key: string; name: string; time: string; done: boolean }
 
@@ -96,8 +96,8 @@
 		if (filter.value === 'yesterday') return diff === 1
 		return diff >= 2
 	}
-	function statusText(s: string): string { if (s === 'cooking') return '备餐中'; if (s === 'ready') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '已下单' }
-	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready' || s === 'delivered') return 'st-ready'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+	function statusText(s: string): string { if (s === 'cooking') return '备餐中'; if (s === 'ready') return '待配送'; if (s === 'delivering') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '已下单' }
+	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-pending'; if (s === 'delivering') return 'st-ready'; if (s === 'delivered') return 'st-delivered'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
 	function cfgLabel(meal: string): string { return cfgOf(meal).label }
 	// 菜品行摘要：第一项名 + 共 N 件
 	function orderSummary(order: MyOrder): string {
@@ -122,7 +122,8 @@
 		const steps: TlStep[] = []
 		steps.push({ key: 'pending', name: '已下单', time: fmtTime(o.createdAt), done: true })
 		steps.push({ key: 'cooking', name: '备餐中', time: fmtTime(o.log.cooking), done: o.log.cooking > 0 })
-		steps.push({ key: 'ready', name: '配送中', time: fmtTime(o.log.ready), done: o.log.ready > 0 })
+		steps.push({ key: 'ready', name: '出餐完成', time: fmtTime(o.log.ready), done: o.log.ready > 0 })
+		steps.push({ key: 'delivering', name: '配送中', time: fmtTime(o.log.delivering), done: o.log.delivering > 0 })
 		steps.push({ key: 'delivered', name: '已送达', time: fmtTime(o.log.delivered), done: o.log.delivered > 0 })
 		return steps
 	})
@@ -148,10 +149,11 @@
 							}
 						}
 						const logObj = o.getJSON('statusLog')
-						const log: OrderLog = { cooking: 0, ready: 0, delivered: 0 }
+						const log: OrderLog = { cooking: 0, ready: 0, delivering: 0, delivered: 0 }
 						if (logObj instanceof UTSJSONObject) {
 							log.cooking = logObj.getNumber('cooking') ?? 0
 							log.ready = logObj.getNumber('ready') ?? 0
+							log.delivering = logObj.getNumber('delivering') ?? 0
 							log.delivered = logObj.getNumber('delivered') ?? 0
 						}
 						list.push({ orderNo: o.getString('orderNo') ?? '', meal: o.getString('meal') ?? '', status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, items: items, createdAt: o.getNumber('createdAt') ?? 0, log: log })
@@ -209,6 +211,7 @@
 	.st-pending { background-color: #FFFFFF; color: #22301F; border: 1px solid #E7E3D6; }
 	.st-cooking { background-color: #E9F1E7; color: #24522F; }
 	.st-ready { background-color: #2F6B3F; color: #FFFFFF; font-weight: 700; }
+	.st-delivered { background-color: #1D4226; color: #FFFFFF; }
 	.st-cancel { background-color: #F3F7F1; color: #8C9689; }
 	.o-summary { display: block; font-size: 13px; color: #22301F; margin-top: 10px; }
 	.o-foot { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 10px; }

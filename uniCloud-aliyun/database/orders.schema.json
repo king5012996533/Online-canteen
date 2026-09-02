@@ -23,11 +23,11 @@
     },
     "status": {
       "bsonType": "string",
-      "description": "状态：pending / cooking / ready / delivered / canceled"
+      "description": "状态：pending / cooking / ready / delivering / delivered / canceled"
     },
     "status_log": {
       "bsonType": "object",
-      "description": "各状态达成时间戳 {cooking, ready, delivered, canceled}，供用户端状态时间线展示"
+      "description": "各状态达成时间戳 {cooking, ready, delivering, delivered, canceled}，供用户端状态时间线展示"
     },
     "items": {
       "bsonType": "array",
@@ -48,6 +48,10 @@
     "uid": {
       "bsonType": "string",
       "description": "下单用户 _id（users 集合；未登录或 token 失效为空串，历史订单无此字段）"
+    },
+    "request_id": {
+      "bsonType": "string",
+      "description": "下单幂等键（前端每个支付意图生成，重试去重用）"
     },
     "created_at": {
       "bsonType": "number",

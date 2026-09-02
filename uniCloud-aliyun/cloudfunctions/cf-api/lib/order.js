@@ -223,6 +223,7 @@ async function buildDaySummary(db, date) {
 				orderNo: o.order_no,
 				meal: mealOf(o),
 				status: o.status,
+				status_log: o.status_log || {},
 				total: o.total,
 				customer: o.customer || { name: '', location: '', phone: '', note: '' },
 				items: (o.items || []).map(function (it) {
