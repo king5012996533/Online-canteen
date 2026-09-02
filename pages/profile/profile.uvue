@@ -6,7 +6,7 @@
 			<text class="g-title head-title">我的</text>
 		</view>
 
-		<!-- 登录态：仅展示自动登录状态，不再做描边卡片 -->
+		<!-- 登录态：仅展示自动登录状态，不做描边卡片 -->
 		<view class="login-row">
 			<view class="avatar"><text class="avatar-char">微</text></view>
 			<view class="login-main">
@@ -28,24 +28,34 @@
 			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveProfile">{{saving ? '保存中…' : '保存'}}</button>
 		</view>
 
-		<!-- 菜单：订单已迁往独立 Tab -->
+		<!-- 我的订单 -->
 		<view class="section">
-			<text class="g-cap">更多服务</text>
+			<text class="g-cap">我的订单</text>
 			<view class="g-hairline sec-line"></view>
-			<view class="card menu-card">
-				<navigator class="menu-row" url="/pages/orders/orders" open-type="switchTab">
-					<text class="menu-name">我的订单</text>
-					<text class="menu-arrow">›</text>
-				</navigator>
-			</view>
-			<view class="card menu-card">
-				<view class="menu-row" @click="toast('感谢反馈，请联系饭堂微信群')"><text class="menu-name">意见反馈</text><text class="menu-arrow">›</text></view>
-				<view class="g-hairline"></view>
-				<view class="menu-row" @click="toast('富记线上饭堂 · 写字楼现炒午餐')"><text class="menu-name">关于我们</text><text class="menu-arrow">›</text></view>
+			<text v-if="ordersLoading && loginOk" class="g-sub order-empty">正在加载订单…</text>
+			<text v-else-if="orders.length === 0" class="g-sub order-empty">{{loginOk ? '还没有订单' : '登录后即可查看订单'}}</text>
+			<view v-else>
+				<view v-for="(order, idx) in orders" :key="order.orderNo">
+					<view v-if="idx > 0" class="g-hairline order-sep"></view>
+					<view class="order-item">
+						<view class="order-head">
+							<text class="order-no">{{order.orderNo}}</text>
+							<text class="st-badge" :class="statusClass(order.status)">{{statusText(order.status)}}</text>
+						</view>
+						<view v-for="(item, itemIdx) in order.items" :key="itemIdx" class="order-line">
+							<text class="order-line-name">{{item.name}} × {{item.qty}}</text>
+							<text class="order-line-price">¥{{item.pay * item.qty}}</text>
+						</view>
+						<view class="order-foot">
+							<text class="order-time">{{fmtTime(order.createdAt)}}</text>
+							<view class="order-total-row"><text class="order-total-label">合计</text><text class="g-price order-total-num">¥{{order.total}}</text></view>
+						</view>
+					</view>
+				</view>
 			</view>
 		</view>
 
-		<text class="g-sub logout">退出登录</text>
+		<text class="g-cap foot-note">在线支付即将上线</text>
 		<view v-if="toastMessage !== ''" class="g-toast"><text class="toast-text">{{toastMessage}}</text></view>
 	</view>
 </template>
@@ -73,8 +83,9 @@
 		const d = new Date(ms + (480 + new Date(ms).getTimezoneOffset()) * 60000)
 		return pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes())
 	}
-	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '可取餐'; if (s === 'canceled') return '已取消'; return '待处理' }
-	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-ready'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+	// 状态文案：4.0 配送语义（ready=配送中），delivered 为云端新增状态
+	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '待处理' }
+	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready' || s === 'delivered') return 'st-ready'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
 
 	// uni.login 回调转 Promise：拿微信登录 code（拿不到返回空串）
 	function getWxCode(): Promise<string> {
@@ -262,6 +273,7 @@
 	}
 	onPullDownRefresh(() => { refreshAll() })
 </script>
+
 <style>
 	.page { background-color: #F6F3EB; padding: 20px 20px 36px; }
 	/* ---------- 页头 ---------- */
@@ -283,19 +295,27 @@
 	.form-field { margin-top: 12px; }
 	.form-label-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
 	.save-btn { width: 100%; border: 0; margin-top: 16px; }
-	/* ---------- 菜单行 ---------- */
-	.card { background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E7E3D6; }
-	.menu-card { margin-top: 12px; padding: 2px 14px; }
-	.menu-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 14px 0; }
-	.menu-name { font-size: 14px; font-weight: 600; color: #22301F; }
-	.menu-arrow { font-size: 16px; color: #8C9689; }
-	/* ---------- 状态徽章四态（绿系）：与 script 的 statusClass 对应 ---------- */
+	/* ---------- 我的订单 ---------- */
+	.order-empty { display: block; text-align: center; padding: 14px 0 4px; }
+	.order-sep { margin-top: 14px; }
+	.order-item { padding-top: 12px; }
+	.order-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+	.order-no { font-size: 12px; font-weight: 700; color: #22301F; }
+	/* 状态徽章四态外观：白描 / 浅绿 / 绿实 / 雾灰 */
 	.st-badge { border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 600; }
 	.st-pending { background-color: #FFFFFF; color: #22301F; border: 1px solid #E7E3D6; }
 	.st-cooking { background-color: #E9F1E7; color: #24522F; }
 	.st-ready { background-color: #2F6B3F; color: #FFFFFF; font-weight: 700; }
 	.st-cancel { background-color: #F3F7F1; color: #8C9689; }
+	.order-line { display: flex; flex-direction: row; justify-content: space-between; padding: 7px 0; }
+	.order-line-name { font-size: 13px; color: #22301F; }
+	.order-line-price { font-size: 13px; font-weight: 800; color: #22301F; }
+	.order-foot { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding-top: 8px; }
+	.order-time { font-size: 11px; color: #8C9689; }
+	.order-total-row { display: flex; flex-direction: row; align-items: baseline; }
+	.order-total-label { font-size: 12px; color: #8C9689; margin-right: 6px; }
+	.order-total-num { font-size: 15px; }
 	/* ---------- 页脚 / 提示 ---------- */
-	.logout { display: block; text-align: center; margin-top: 26px; }
+	.foot-note { display: block; text-align: center; margin-top: 18px; }
 	.toast-text { color: #FFFFFF; font-size: 13px; text-align: center; }
 </style>
