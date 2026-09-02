@@ -89,7 +89,6 @@
 									</view>
 								</view>
 								<text class="go-items">{{o.name !== '' ? o.name + ' · ' : ''}}{{itemsSummary(o)}}</text>
-								<text v-if="o.note !== ''" class="oc-note">备注：{{o.note}}</text>
 								<text v-if="lastLogText(o.no) !== ''" class="oc-logtime">最近状态：{{lastLogText(o.no)}}</text>
 								<view v-if="o.status === 'pending' || o.status === 'cooking'" class="go-row2">
 									<button class="act act-mini act-mini-main" :disabled="busyNo !== ''" @click="setStatus(o.no, o.status === 'pending' ? 'cooking' : 'ready')">{{o.status === 'pending' ? '开始备餐' : '出餐完成'}}</button>
@@ -411,12 +410,11 @@ initPrinter(toast)
 				const o = arr2[i]
 				if (o instanceof UTSJSONObject) {
 					const cust = o.getJSON('customer')
-					let name = ''; let location = ''; let phone = ''; let note = ''
+					let name = ''; let location = ''; let phone = ''
 					if (cust instanceof UTSJSONObject) {
 						name = cust.getString('name') ?? ''
 						location = cust.getString('location') ?? ''
 						phone = cust.getString('phone') ?? ''
-						note = cust.getString('note') ?? ''
 					}
 					const items: AdminItem[] = []
 					const itemsArr = o.getArray('items')
@@ -433,7 +431,7 @@ initPrinter(toast)
 					const no = o.getString('orderNo') ?? ''
 					const slog = o.getJSON('status_log') // 云端 updateStatus 写入的各状态达成时间戳
 					if (slog instanceof UTSJSONObject) { logs.set(no, slog) }
-					list.push({ no: no, meal: meal, status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, note: note, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
+					list.push({ no: no, meal: meal, status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, name: name, location: location, phone: phone, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
 				}
 			}
 		}
@@ -1049,8 +1047,7 @@ initPrinter(toast)
 	.st-ready { background-color: #E9F1E7; color: #2F6B3F; }
 	.st-delivered { background-color: #2F6B3F; color: #FFFFFF; }
 	.st-cancel { background-color: #E7E3D6; color: #8C9689; }
-	.oc-note { display: block; color: #24522F; font-size: 12px; margin-top: 5px; }
-	.oc-logtime { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 6px; }
+	/* ---------- 订单管理展开行 ---------- */	.oc-logtime { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 6px; }
 	.act { height: 40px; border-radius: 11px; font-size: 13.5px; font-weight: 700; margin: 0; padding: 0; line-height: 38px; }
 	.act-main { flex: 1; background-color: #2F6B3F; background-image: linear-gradient(180deg, #2F6B3F, #24522F 55%, #1D4226); color: #FFFFFF; border: 0; box-shadow: 0 4px 10px rgba(47,107,63,.28); }
 	.act-main[disabled] { background-color: #E7E3D6; background-image: none; box-shadow: none; color: #8C9689; }

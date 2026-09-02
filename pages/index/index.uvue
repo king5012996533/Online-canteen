@@ -105,7 +105,6 @@
 
 	const screen = ref('home') // home / menu / dish
 	const loading = ref(false)
-	const dateLabel = ref('')
 	const toastMessage = ref('')
 	// 分类从菜单数据动态收集：厨房端自由输入的新分类用户端也能看到
 	const menuCategories = computed((): string[] => {
@@ -186,7 +185,6 @@
 			if (result !== null && result.getBoolean('ok') === true) {
 				const data = result.getJSON('data')
 				if (data instanceof UTSJSONObject) {
-					dateLabel.value = data.getString('dateLabel') ?? ''
 					const arr = data.getArray('dishes')
 					const list: Dish[] = []
 					if (arr !== null) {

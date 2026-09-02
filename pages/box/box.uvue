@@ -175,7 +175,7 @@
 		if (items.length === 0) { toast('饭盒还是空的'); return }
 		submitting.value = true
 		try {
-			const result = await requestJson('/cf-order', { action: 'create', meal: cartMeal.value, request_id: requestId.value, items: items, customer: { name: customer.name, location: customer.location, phone: customer.phone, note: customer.note } } as UTSJSONObject)
+			const result = await requestJson('/cf-order', { action: 'create', meal: cartMeal.value, request_id: requestId.value, items: items, customer: { name: customer.name, location: customer.location, phone: customer.phone } } as UTSJSONObject)
 			if (result !== null && result.getBoolean('ok') === true) {
 				const data = result.getJSON('data')
 				if (data instanceof UTSJSONObject) { orderNo.value = data.getString('orderNo') ?? '' }

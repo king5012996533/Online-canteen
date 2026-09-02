@@ -75,33 +75,18 @@
 	import { customer } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
 
-	type OrderItem = { name: string; pay: number; qty: number }
-	type MyOrder = { orderNo: string; status: string; total: number; items: OrderItem[]; createdAt: number }
-
 	// 登录态：loginOk 已登录 / loginChecking 登录中 / 失败时 loginErr 给出原因
 	const loginOk = ref(false)
 	const loginChecking = ref(true)
 	const loginErr = ref('')
 	const form = reactive({name: '', phone: '', location: ''})
 	const saving = ref(false)
-	const orders = ref<MyOrder[]>([])
-	const ordersLoading = ref(true)
 	const toastMessage = ref('')
 	// 编辑态：点「配送地址/联系电话」行展开常用信息编辑卡
 	const editing = ref(false)
 	const aboutSheet = ref(false)
 
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
-	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
-	// 北京时间格式化下单时间（与 index 页 bjNow 同一换算口径）
-	function fmtTime(ms: number): string {
-		const d = new Date(ms + (480 + new Date(ms).getTimezoneOffset()) * 60000)
-		return pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes())
-	}
-	// 状态文案：4.0 配送语义（ready=待配送，delivering=配送中），delivered 为云端新增状态
-	function statusText(s: string): string { if (s === 'cooking') return '制作中'; if (s === 'ready') return '待配送'; if (s === 'delivering') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '待处理' }
-	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-cooking'; if (s === 'delivering') return 'st-ready'; if (s === 'delivered') return 'st-delivered'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
-
 	// 用户卡文案
 	const userDisplayName = computed((): string => {
 		if (loginChecking.value) return '正在登录…'
@@ -126,7 +111,6 @@
 		loginOk.value = false
 		loginChecking.value = false
 		loginErr.value = ''
-		orders.value = []
 		toast('已退出，下次进入将自动重新登录')
 	}
 
@@ -206,64 +190,6 @@
 		form.phone = p.getString('phone') ?? ''
 		form.location = p.getString('location') ?? ''
 	}
-	// 解析 myOrders 响应里的订单数组
-	function parseOrders(r: UTSJSONObject): MyOrder[] {
-		const list: MyOrder[] = []
-		const data = r.getJSON('data')
-		if (data instanceof UTSJSONObject) {
-			const arr = data.getArray('orders')
-			if (arr !== null) {
-				for (let i = 0; i < arr.length; i++) {
-					const o = arr[i]
-					if (o instanceof UTSJSONObject) {
-						const items: OrderItem[] = []
-						const iarr = o.getArray('items')
-						if (iarr !== null) {
-							for (let j = 0; j < iarr.length; j++) {
-								const it = iarr[j]
-								if (it instanceof UTSJSONObject) {
-									items.push({ name: it.getString('name') ?? '', pay: it.getNumber('pay') ?? 0, qty: Math.floor(it.getNumber('qty') ?? 0) })
-								}
-							}
-						}
-						list.push({ orderNo: o.getString('orderNo') ?? '', status: o.getString('status') ?? '', total: o.getNumber('total') ?? 0, items: items, createdAt: o.getNumber('createdAt') ?? 0 })
-					}
-				}
-			}
-		}
-		return list
-	}
-	// 拉我的订单：silent=true 时不转圈、失败不弹错（用于 onShow / 下拉刷新的静默刷新）
-	async function loadOrders(silent: boolean) {
-		if (!loginOk.value) { orders.value = []; if (!silent) { ordersLoading.value = false }; return }
-		if (!silent) ordersLoading.value = true
-		let err = ''
-		try {
-			let r = await requestJson('/cf-user', { action: 'myOrders' } as UTSJSONObject)
-			if (r !== null && r.getBoolean('ok') === false && (r.getString('err') ?? '').indexOf('登录') !== -1) {
-				// token 失效：清掉后静默重登一次再拉一遍
-				uni.removeStorageSync('xk_user_token')
-				await ensureLogin()
-				if (loginOk.value) {
-					r = await requestJson('/cf-user', { action: 'myOrders' } as UTSJSONObject)
-				} else {
-					orders.value = []
-					err = '登录失败，请重新登录'
-					console.log('myOrders fail', err)
-					if (!silent) ordersLoading.value = false
-					return
-				}
-			}
-			if (r !== null && r.getBoolean('ok') === true) {
-				orders.value = parseOrders(r)
-			} else {
-				err = r === null ? '网络异常，请重试' : (r.getString('err') ?? '订单加载失败，请重试')
-				console.log('myOrders fail', err)
-			}
-		} catch (e) { console.log('loadOrders fail', e); err = '网络异常，请重试' }
-		if (!silent) ordersLoading.value = false
-		if (!silent && err !== '' && loginOk.value) { toast(err) }
-	}
 	// 单次保存请求：成功返回空串，失败返回给用户看的提示文案
 	async function saveOnce(): Promise<string> {
 		const r = await requestJson('/cf-user', { action: 'saveProfile', profile: { name: form.name, phone: form.phone, location: form.location } } as UTSJSONObject)
@@ -288,29 +214,26 @@
 		saving.value = false
 		if (err === '') { toast('已保存') } else { toast(err) }
 	}
-	// 「重新登录」按钮：完整重走一遍登录，成功后回填资料并刷新订单
+	// 「重新登录」按钮：完整重走一遍登录，成功后回填资料
 	async function manualLogin() {
 		const p = await ensureLogin()
 		applyProfile(p)
-		await loadOrders(false)
 	}
-	// 首次进入：静默登录 → 回填资料 → 拉订单
+	// 首次进入：静默登录 → 回填资料
 	async function fullInit() {
 		const p = await ensureLogin()
 		applyProfile(p)
-		await loadOrders(false)
 	}
 	let inited = false
-	// 每次页面显示（含切回本 Tab）都静默刷新订单；首次进入才做登录 + 资料回填
+	// 每次页面显示（含切回本 Tab）都做一次；首次进入才做登录 + 资料回填
 	onShow(() => {
-		if (!inited) { inited = true; fullInit() } else { loadOrders(true) }
+		if (!inited) { inited = true; fullInit() }
 	})
-	// 下拉刷新：重新校验登录态，资料和订单都拉最新
+	// 下拉刷新：重新校验登录态，资料拉最新
 	async function refreshAll() {
 		try {
 			const p = await ensureLogin()
 			applyProfile(p)
-			await loadOrders(true)
 		} catch (e) { console.log('refreshAll fail', e) }
 		uni.stopPullDownRefresh()
 	}

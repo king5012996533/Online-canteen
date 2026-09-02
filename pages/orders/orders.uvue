@@ -16,7 +16,7 @@
 						<view class="o-head">
 							<text class="o-no">{{order.orderNo}}</text>
 							<view class="g-chip-outline meal-chip"><text class="meal-chip-text">{{cfgLabel(order.meal)}}</text></view>
-							<text class="st-badge" :class="statusClass(order.status)">{{statusText(order.status)}}</text>
+							<text class="st-badge" :class="orderStatusClass(order.status)">{{orderStatusText(order.status)}}</text>
 						</view>
 						<text class="o-summary">{{orderSummary(order)}}</text>
 						<view class="o-foot">
@@ -58,6 +58,7 @@
 	import { requestJson } from '../../common/http.uts'
 	import { sessionSilentLogin, ensureLogin } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
+	import { orderStatusText, orderStatusClass } from '../../common/status.uts'
 
 	type OrderItem = { name: string; pay: number; qty: number }
 	// statusLog 展平成各状态时间戳（0 = 未达成）
@@ -96,8 +97,7 @@
 		if (filter.value === 'yesterday') return diff === 1
 		return diff >= 2
 	}
-	function statusText(s: string): string { if (s === 'cooking') return '备餐中'; if (s === 'ready') return '待配送'; if (s === 'delivering') return '配送中'; if (s === 'delivered') return '已送达'; if (s === 'canceled') return '已取消'; return '已下单' }
-	function statusClass(s: string): string { if (s === 'cooking') return 'st-cooking'; if (s === 'ready') return 'st-pending'; if (s === 'delivering') return 'st-ready'; if (s === 'delivered') return 'st-delivered'; if (s === 'canceled') return 'st-cancel'; return 'st-pending' }
+	// 用户侧状态文案/徽章统一在 common/status.uts
 	function cfgLabel(meal: string): string { return cfgOf(meal).label }
 	// 菜品行摘要：第一项名 + 共 N 件
 	function orderSummary(order: MyOrder): string {

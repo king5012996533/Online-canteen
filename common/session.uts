@@ -6,7 +6,7 @@
 
 import { requestJson } from './http.uts'
 
-export const customer = reactive({ name: '', location: '', phone: '', note: '' })
+export const customer = reactive({ name: '', location: '', phone: '' })
 
 let loginDone = false
 
@@ -71,13 +71,6 @@ export async function sessionSilentLogin() {
 	if (name !== '') customer.name = name
 	if (location !== '') customer.location = location
 	if (phone !== '') customer.phone = phone
-}
-
-// 外部（如我的页保存资料后）刷新本地缓存
-export function sessionApplyProfile(name: string, location: string, phone: string) {
-	customer.name = name
-	customer.location = location
-	customer.phone = phone
 }
 
 // 把顾客信息（含首页改的配送地点）保存到云端档案；静默失败——未登录/网络差时本次会话内仍然生效

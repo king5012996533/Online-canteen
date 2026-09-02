@@ -168,16 +168,6 @@
 		padding: 5px 9px;
 	}
 
-	/* 状态徽章：绿实底（可取餐 / 配送中 / 已达成） */
-	.g-chip-fire {
-		background-color: #2F6B3F;
-		color: #FFFFFF;
-		font-size: 11px;
-		font-weight: 700;
-		border-radius: 6px;
-		padding: 4px 9px;
-	}
-
 	/* 价格：深绿加粗 */
 	.g-price {
 		color: #24522F;

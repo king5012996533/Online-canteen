@@ -37,11 +37,6 @@ function tsOfHM(dateStr, hm) {
 	return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), Number(hmP[0]), Number(hmP[1]), 0) - 480 * 60000;
 }
 
-// 兼容包装：当天 11:00 截单时刻（截单时刻已由 config.MEALS 各餐 orderClose 取代）
-function cutoffTsOf(dateStr) {
-	return tsOfHM(dateStr, '11:00');
-}
-
 function pad2(n) {
 	return String(n).padStart(2, '0');
 }
@@ -88,7 +83,6 @@ module.exports = {
 	fail: fail,
 	bjNow: bjNow,
 	bjDateStr: bjDateStr,
-	cutoffTsOf: cutoffTsOf,
 	tsOfHM: tsOfHM,
 	pad2: pad2,
 	pad3: pad3,

@@ -3,7 +3,7 @@
  * mod = 'menu'：今日菜单（原 cf-menu），action: getToday
  */
 
-const { ok, bjNow, bjDateStr, cutoffTsOf } = require('./util.js');
+const { ok, bjNow, bjDateStr } = require('./util.js');
 
 // 内置菜品模板兜底数据：若 dishes 表中没有任何 is_template=true 的记录，
 // 则在播种今日菜单前先用这份内置数据补种模板（sort 按下标 0-7）。
@@ -113,13 +113,8 @@ async function menuGetToday() {
 			};
 		});
 
-	const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-	const m = bj.getUTCMonth() + 1;
-	const day = bj.getUTCDate();
 	return ok({
 		date: today,
-		dateLabel: m + '月' + day + '日 · ' + WEEKDAYS[bj.getUTCDay()],
-		cutoffTs: cutoffTsOf(today),
 		dishes: dishes
 	});
 }

@@ -5,7 +5,7 @@ import { ensureGbk } from './gbk-table.uts'
 
 	export type AdminItem = { name: string; pay: number; qty: number }
 	// meal：'lunch' | 'dinner'（老订单可能没有该字段，页面解析时已归一为 lunch）
-	export type AdminOrder = { no: string; meal: string; status: string; total: number; name: string; location: string; phone: string; note: string; items: AdminItem[]; createdAt: number }
+	export type AdminOrder = { no: string; meal: string; status: string; total: number; name: string; location: string; phone: string; items: AdminItem[]; createdAt: number }
 
 // 提示注入：admin.uvue 在定义 toast 后调用一次 initPrinter(toast)，本模块所有提示统一走 toastFn
 let toastFn: (msg: string) => void = (_) => {}
@@ -93,11 +93,6 @@ function toast(msg: string) { toastFn(msg) }
 		t.line('--------------------------------')
 		t.line('取餐 ' + o.location)
 		t.line('客户 ' + o.name + (o.phone !== '' ? ' ' + o.phone : ''))
-		if (o.note !== '') {
-			t.size(0x01)
-			t.line('备注 ' + o.note)
-			t.size(0x00)
-		}
 		t.line('--------------------------------')
 		for (let i = 0; i < o.items.length; i++) {
 			const it = o.items[i]

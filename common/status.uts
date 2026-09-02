@@ -1,0 +1,23 @@
+/**
+ * 订单状态的用户侧文案与徽章类名（orders/profile 共用）。
+ * 厨房端（admin.uvue）使用自己的厨房词汇，不引用本模块。
+ * 徽章类名 st-* 的具体样式定义在各页面自己的 <style> 里。
+ */
+
+export function orderStatusText(s: string): string {
+	if (s === 'cooking') return '备餐中'
+	if (s === 'ready') return '待配送'
+	if (s === 'delivering') return '配送中'
+	if (s === 'delivered') return '已送达'
+	if (s === 'canceled') return '已取消'
+	return '已下单'
+}
+
+export function orderStatusClass(s: string): string {
+	if (s === 'cooking') return 'st-cooking'
+	if (s === 'ready') return 'st-pending'
+	if (s === 'delivering') return 'st-ready'
+	if (s === 'delivered') return 'st-delivered'
+	if (s === 'canceled') return 'st-cancel'
+	return 'st-pending'
+}

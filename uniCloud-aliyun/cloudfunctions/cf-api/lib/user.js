@@ -161,8 +161,7 @@ async function userMyOrders(p) {
 			statusLog: o.status_log || {},
 			total: o.total,
 			items: o.items || [],
-			createdAt: o.created_at,
-			menuDate: o.menu_date
+			createdAt: o.created_at
 		};
 	});
 	return ok({ orders: orders });
