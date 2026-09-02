@@ -46,7 +46,7 @@
 		<!-- ===== 菜品详情（自由定价） ===== -->
 		<view v-if="screen === 'dish' && selDish !== null" class="dish-page">
 			<view class="detail-hero">
-				<image class="hero-img" :src="selDish?.image" mode="aspectFill"></image>
+				<image class="hero-img" :src="heroImg" mode="aspectFill"></image>
 				<view class="detail-nav">
 					<view class="dn-btn" @click="screen = 'menu'"><text class="dn-arr">‹</text></view>
 					<text class="tt">菜品详情</text>
@@ -70,6 +70,7 @@
 					<text class="slider-title">选择您愿意支付的金额</text>
 					<slider class="the-slider" :min="sliderMin" :max="sliderMax" :step="1" :value="sliderVal" activeColor="#2F6B3F" backgroundColor="#E7E3D6" block-size="22" block-color="#2F6B3F" @change="onSlider"></slider>
 					<view class="slider-ticks"><text class="tick" :class="{'on': sliderVal === tier1}">¥{{tier1}}</text><text class="tick" :class="{'on': sliderVal === tier2}">¥{{tier2}}</text><text class="tick" :class="{'on': sliderVal === tier3}">¥{{tier3}}</text><text class="tick">¥{{sliderMax}}+</text></view>
+				</view>
 				<view class="choice">
 					<view class="cl"><text class="cl-l">你选择：</text><text class="cl-v">¥{{sliderVal}}</text></view>
 					<text class="cr">预计份量：{{portionLabel}}</text>
@@ -110,6 +111,7 @@
 	function isMealOpen(key: string): boolean { if (testBypass) return true; return stateOf(key) === 'open' }
 
 	const locLabel = computed((): string => { const loc = customer.location.trim(); if (loc === '') return '公司前台'; return loc })
+	const heroImg = computed((): string => { const d = selDish.value; return d !== null ? d.image : '' })
 	const portionLabel = computed((): string => {
 		if (selDish.value === null) return '基础份量'
 		const base = selDish.value.price

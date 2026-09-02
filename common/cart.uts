@@ -1,9 +1,10 @@
 /**
- * 饭盒（购物车）全局状态：模块级单例 + storage 镜像，供 首页/饭盒 两个 Tab 页共享。
+ * 饭盒（购物车）全局状态：模块级单例，供 首页/饭盒 两个 Tab 页共享。
  * 规则：
  *  - 一单一餐：meal 属于饭盒；饭盒非空时切换餐次会被拒绝（setMeal 返回 false）；
- *  - 所有写操作立即落 storage，页面 onShow 时调 hydrate() 兜底恢复；
- *  - spec 是份量标签：自定义价菜品按所选金额给出（标准/加量/更足），固定价菜品恒为"标准"。
+ *  - 状态存内存单例（小程序同一次会话内所有页面共享同一 JS 上下文）；
+ *    不落 storage 是有意的：避免 UTS 对 JSON 数组泛型解析的兼容性风险，
+ *    代价是杀掉小程序后饭盒不保留（可接受）。
  */
 
 export type CartItem = {
@@ -15,41 +16,11 @@ export type CartItem = {
 	spec: string
 }
 
-const KEY_ITEMS = 'xk_cart_items'
-const KEY_MEAL = 'xk_cart_meal'
-
 export const cartItems = ref<CartItem[]>([])
 export const cartMeal = ref('lunch')
 
-let hydrated = false
-
-// 从 storage 恢复（各 Tab 页 onShow 调用，幂等）
+// 从 storage 恢复的钩子保留（现为实现为空操作，保持调用方 API 稳定）
 export function cartHydrate() {
-	if (hydrated) return
-	hydrated = true
-	const s = uni.getStorageSync(KEY_ITEMS)
-	if (typeof s === 'string' && s.length > 2) {
-		const arr = JSON.parse<Array<UTSJSONObject>>(s)
-		if (arr !== null) {
-			const list: CartItem[] = []
-			arr.forEach((o) => {
-				const id = o.getString('id') ?? ''
-				const qty = Math.floor(o.getNumber('qty') ?? 0)
-				if (id !== '' && qty > 0) {
-					list.push({ id: id, name: o.getString('name') ?? '', image: o.getString('image') ?? '', pay: o.getNumber('pay') ?? 0, qty: qty, spec: o.getString('spec') ?? '标准' })
-				}
-			})
-			cartItems.value = list
-		}
-	}
-	const m = uni.getStorageSync(KEY_MEAL)
-	if (m === 'dinner') { cartMeal.value = 'dinner' } else if (m === 'lunch') { cartMeal.value = 'lunch' }
-}
-
-function persist() {
-	uni.setStorageSync(KEY_ITEMS, JSON.stringify(cartItems.value))
-	uni.setStorageSync(KEY_MEAL, cartMeal.value)
-	cartSyncBadge()
 }
 
 // 饭盒里是否已有菜品
@@ -72,7 +43,7 @@ export function cartAdd(item: CartItem) {
 	} else {
 		cartItems.value.push(item)
 	}
-	persist()
+	cartSyncBadge()
 }
 
 // 直接设置某菜品的数量（0 = 移除）
@@ -83,7 +54,7 @@ export function cartSetQty(id: string, qty: number) {
 	if (it.qty === 0) {
 		cartItems.value = cartItems.value.filter((x) => x.id !== id)
 	}
-	persist()
+	cartSyncBadge()
 }
 
 // 切换餐次：饭盒非空时拒绝（返回 false）
@@ -93,7 +64,6 @@ export function cartSetMeal(key: string): boolean {
 		return false
 	}
 	cartMeal.value = key
-	persist()
 	return true
 }
 
@@ -110,6 +80,5 @@ export function cartSyncBadge() {
 // 下单成功后清空
 export function cartClear() {
 	cartItems.value = []
-	persist()
 	cartSyncBadge()
 }
