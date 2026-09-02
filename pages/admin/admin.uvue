@@ -12,177 +12,243 @@
 			</view>
 		</view>
 
-		<!-- 主面板 -->
-		<scroll-view v-else class="scroll" scroll-y="true">
-			<view class="content">
-				<view class="header">
-					<view><text class="page-title">厨房端</text><text class="header-sub">富记线上饭堂 · 每 30 秒自动刷新</text></view>
-					<view class="header-btns">
-						<button class="refresh" @click="togglePrinterPanel">{{btState === 'ready' ? '打印机✓' : '打印机'}}</button>
-						<button class="refresh" @click="loadSummary">{{loading ? '…' : '刷新'}}</button>
-					</view>
+		<!-- 主面板：左侧导航 + 右侧视图 -->
+		<view v-else class="shell">
+			<view class="side">
+				<view class="side-logo"><text class="side-logo-char">富</text></view>
+				<view v-for="nav in navItems" :key="nav.key" class="side-item" :class="{'side-item-on': view === nav.key}" @click="switchView(nav.key)">
+					<text class="side-icon">{{nav.icon}}</text>
+					<text class="side-label" :class="{'side-label-on': view === nav.key}">{{nav.label}}</text>
 				</view>
-
-				<!-- 蓝牙打印面板 -->
-				<view v-if="showPrinter" class="bt-panel">
-					<view class="bt-head">
-						<text class="bt-title">蓝牙打印机</text>
-						<view class="bt-close" @click="togglePrinterPanel"><text class="bt-close-text">收起</text></view>
-					</view>
-					<text class="bt-status">状态：{{btStateText()}}</text>
-					<button class="bt-scan" @click="startScan">{{btState === 'scanning' ? '搜索中… 点下面设备连接' : '搜索打印机'}}</button>
-					<text v-if="btState === 'scanning'" class="bt-status">已发现 {{btDevs.length}} 台 · 已拉取 {{btTicks}} 次 · {{btEnv === 'devtools' ? 'devtools(模拟器)' : btEnv}}</text>
-					<view v-for="(nm, index) in btDevs" :key="index" class="bt-dev" @click="pickDevice(index)">
-						<text class="bt-dev-name">{{nm}}</text>
-						<text class="bt-dev-conn">连接</text>
-					</view>
-					<text class="bt-tip">打印机先开机；搜不到就长按打印机走纸键进入配对模式再搜。连一次即可，以后打印自动重连。</text>
-				</view>
-
-				<!-- Tab 切换 -->
-				<view class="tabs">
-					<view class="tab" :class="{'tab-on': tab === 'orders'}" @click="switchTab('orders')"><text class="tab-text" :class="{'tab-text-on': tab === 'orders'}">今日订单</text></view>
-					<view class="tab" :class="{'tab-on': tab === 'menu'}" @click="switchTab('menu')"><text class="tab-text" :class="{'tab-text-on': tab === 'menu'}">菜单发布</text></view>
-				</view>
+			</view>
+			<scroll-view class="main" scroll-y="true">
+				<view class="content">
 
 				<!-- 断连提示（后台轮询失败时显示，恢复后自动消失） -->
 				<view v-if="netLost" class="net-lost"><text class="net-lost-text">网络不稳，正在自动重连…</text></view>
 
-				<!-- ===== 订单 Tab ===== -->
-				<view v-if="tab === 'orders'">
-					<view class="sum-card">
-						<view class="sum-head">
-							<text class="sum-date">{{sumDate}}</text>
+				<!-- ===== 管理首页 ===== -->
+				<view v-if="view === 'home'">
+					<view class="view-head">
+						<text class="view-title">管理首页</text>
+						<text class="view-sub">{{todayText()}} · 富记线上饭堂 · 每 30 秒自动刷新</text>
+					</view>
+					<view class="stat-row">
+						<view class="stat-card">
+							<text class="stat-num">{{todayOrderCount}}</text>
+							<text class="stat-label">今日订单（单）</text>
 						</view>
-						<view v-for="meal in mealBlocks" :key="meal.key" class="meal-block">
-							<view class="meal-head">
-								<text class="meal-title">{{meal.title}}</text>
-								<text class="sum-badge" :class="meal.stateCls">{{meal.state}}</text>
+						<view class="stat-card stat-card-last">
+							<text class="stat-num">¥{{fmt2(todayGmv)}}</text>
+							<text class="stat-label">今日营业额</text>
+						</view>
+					</view>
+					<button class="primary" @click="goTomorrowMenu">发布明日菜单</button>
+					<text class="sec-title">快捷流程</text>
+					<view class="quick-grid">
+						<view class="quick-item" @click="switchView('menu')"><text class="quick-icon">🍚</text><text class="quick-label">菜单管理</text></view>
+						<view class="quick-item" @click="switchView('orders')"><text class="quick-icon">📋</text><text class="quick-label">订单管理</text></view>
+						<view class="quick-item" @click="switchView('delivery')"><text class="quick-icon">🛵</text><text class="quick-label">配送管理</text></view>
+						<view class="quick-item" @click="switchView('data')"><text class="quick-icon">📊</text><text class="quick-label">数据统计</text></view>
+					</view>
+				</view>
+
+				<!-- ===== 订单管理 ===== -->
+				<view v-else-if="view === 'orders'">
+					<view class="view-head">
+						<text class="view-title">订单管理</text>
+						<text class="view-sub">{{todayText()}} · 今日共 {{activeOrderCount}} 份订单</text>
+					</view>
+					<view class="chip-row">
+						<view class="chip-f" :class="{'chip-f-on': orderFilter === 'all'}" @click="orderFilter = 'all'"><text class="chip-f-text" :class="{'chip-f-text-on': orderFilter === 'all'}">今日订单</text></view>
+						<view class="chip-f" :class="{'chip-f-on': orderFilter === 'pending'}" @click="orderFilter = 'pending'"><text class="chip-f-text" :class="{'chip-f-text-on': orderFilter === 'pending'}">待备餐</text></view>
+						<view class="chip-f" :class="{'chip-f-on': orderFilter === 'cooking'}" @click="orderFilter = 'cooking'"><text class="chip-f-text" :class="{'chip-f-text-on': orderFilter === 'cooking'}">备餐中</text></view>
+						<view class="chip-f" :class="{'chip-f-on': orderFilter === 'ready'}" @click="orderFilter = 'ready'"><text class="chip-f-text" :class="{'chip-f-text-on': orderFilter === 'ready'}">待配送</text></view>
+						<view class="chip-f" :class="{'chip-f-on': orderFilter === 'delivered'}" @click="orderFilter = 'delivered'"><text class="chip-f-text" :class="{'chip-f-text-on': orderFilter === 'delivered'}">已送达</text></view>
+					</view>
+					<view v-for="g in orderGroups" :key="g.loc" class="grp-card">
+						<view class="grp-head" @click="toggleGroup(g.loc)">
+							<view class="grp-locrow">
+								<text class="grp-loc">{{g.loc}}</text>
+								<text class="grp-badge">{{g.orders.length}} 单</text>
 							</view>
-							<view class="lines">
-								<view v-if="meal.lines.length === 0" class="line"><text class="muted">该餐次还没有有效订单</text></view>
-								<view v-for="(line, li) in meal.lines" :key="li" class="line">
-									<text class="line-name">{{line.name}}</text>
-									<text class="line-qty">× {{line.qty}}</text>
-									<text class="line-amount">¥{{fmt2(line.amount)}}</text>
+							<view class="grp-right">
+								<text class="grp-total">¥{{fmt2(g.total)}}</text>
+								<text class="grp-toggle">{{expandedLoc === g.loc ? '收起' : '查看'}}</text>
+							</view>
+						</view>
+						<view v-if="expandedLoc === g.loc" class="grp-body">
+							<view v-for="o in g.orders" :key="o.no" class="grp-order" :class="{'order-cancel': o.status === 'canceled'}">
+								<view class="go-row1">
+									<text class="go-no">{{o.no}}</text>
+									<text class="oc-meal" :class="o.meal === 'dinner' ? 'meal-dinner' : 'meal-lunch'">{{o.meal === 'dinner' ? '晚餐' : '午餐'}}</text>
+									<text class="oc-status go-status" :class="statusClass(o.status)">{{statusText(o.status)}}</text>
+									<view class="go-right">
+										<text class="go-time">{{fmtTime(o.createdAt)}}</text>
+										<text class="go-total">¥{{fmt2(o.total)}}</text>
+									</view>
 								</view>
-							</view>
-							<view class="sum-foot">
-								<text class="sum-meta">共 {{meal.orderCount}} 单 · 含加价 ¥{{fmt2(meal.customExtra)}}</text>
-								<text class="sum-total">GMV ¥{{fmt2(meal.gmv)}}</text>
+								<text class="go-items">{{o.name !== '' ? o.name + ' · ' : ''}}{{itemsSummary(o)}}</text>
+								<text v-if="o.note !== ''" class="oc-note">备注：{{o.note}}</text>
+								<text v-if="lastLogText(o.no) !== ''" class="oc-logtime">最近状态：{{lastLogText(o.no)}}</text>
+								<view v-if="o.status === 'pending' || o.status === 'cooking'" class="go-row2">
+									<button class="act act-mini act-mini-main" :disabled="busyNo !== ''" @click="setStatus(o.no, o.status === 'pending' ? 'cooking' : 'ready')">{{o.status === 'pending' ? '开始备餐' : '出餐完成'}}</button>
+									<button class="act act-mini act-mini-ghost" @click="printOrder(o)">打印</button>
+									<button class="act act-mini act-mini-cancel" @click="cancelOrder(o.no)">取消</button>
+								</view>
+								<view v-else-if="o.status === 'ready'" class="go-row2">
+									<text class="go-ready-tip">✓ 已出餐 · 待配送</text>
+									<button class="act act-mini act-mini-ghost" @click="printOrder(o)">打印</button>
+									<button class="act act-mini act-mini-cancel" @click="cancelOrder(o.no)">取消</button>
+								</view>
+								<view v-else-if="o.status === 'delivered'" class="go-row2">
+									<button class="act act-mini act-mini-ghost" @click="printOrder(o)">打印</button>
+								</view>
 							</view>
 						</view>
 					</view>
+					<view v-if="orderGroups.length === 0" class="empty-card"><text class="muted">当前筛选下没有订单</text></view>
+				</view>
 
-					<text class="sec-title">订单 · {{orders.length}}</text>
+				<!-- ===== 配送管理 ===== -->
+				<view v-else-if="view === 'delivery'">
+					<view class="view-head">
+						<text class="view-title">配送管理</text>
+						<text class="view-sub">按取餐地点分组 · 两段式配送</text>
+					</view>
+					<view class="chip-row">
+						<view class="chip-f" :class="{'chip-f-on': delivFilter === 'ready'}" @click="delivFilter = 'ready'"><text class="chip-f-text" :class="{'chip-f-text-on': delivFilter === 'ready'}">待配送</text></view>
+						<view class="chip-f" :class="{'chip-f-on': delivFilter === 'delivering'}" @click="delivFilter = 'delivering'"><text class="chip-f-text" :class="{'chip-f-text-on': delivFilter === 'delivering'}">配送中</text></view>
+						<view class="chip-f" :class="{'chip-f-on': delivFilter === 'done'}" @click="delivFilter = 'done'"><text class="chip-f-text" :class="{'chip-f-text-on': delivFilter === 'done'}">已完成</text></view>
+					</view>
+					<view v-for="g in delivGroups" :key="g.loc" class="deliv-card">
+						<view class="deliv-info">
+							<view class="deliv-locrow">
+								<text class="deliv-loc">{{g.loc}}</text>
+								<text class="deliv-badge" :class="g.state === 'done' ? 'deliv-badge-done' : (g.state === 'delivering' ? 'deliv-badge-doing' : 'deliv-badge-ready')">{{delivStateText(g.state)}}</text>
+							</view>
+							<text class="deliv-meta">{{delivMeta(g)}}</text>
+						</view>
+						<button v-if="g.state === 'ready'" class="act-deliver" :disabled="deliveringLoc !== ''" @click="startDeliver(g)">开始配送</button>
+						<button v-else-if="g.state === 'delivering'" class="act-deliver act-deliver-done" :disabled="deliveringLoc !== ''" @click="finishDeliver(g)">{{deliveringLoc === g.loc ? '配送中…' : '完成配送'}}</button>
+					</view>
+					<view v-if="delivGroups.length === 0" class="empty-card"><text class="muted">当前筛选下没有配送任务</text></view>
+				</view>
 
-					<view v-for="order in orders" :key="order.no" class="order-card" :class="{'order-cancel': order.status === 'canceled'}">
-						<view class="oc-head">
-							<view class="oc-no-row">
-								<text class="oc-no">{{order.no}}</text>
-								<text class="oc-meal" :class="order.meal === 'dinner' ? 'meal-dinner' : 'meal-lunch'">{{order.meal === 'dinner' ? '晚餐' : '午餐'}}</text>
-							</view>
-							<text class="oc-status" :class="statusClass(order.status)">{{statusText(order.status)}}</text>
-						</view>
-						<view class="oc-cust">
-							<text class="oc-name">{{order.name}} · {{order.location}}</text>
-							<text v-if="order.phone !== ''" class="oc-phone">{{order.phone}}</text>
-						</view>
-						<text v-if="order.note !== ''" class="oc-note">备注：{{order.note}}</text>
-						<view class="oc-items">
-							<view v-for="(item, index) in order.items" :key="index" class="oc-item">
-								<text class="oc-item-name">{{item.name}} × {{item.qty}}</text>
-								<text class="oc-item-price">¥{{fmt2(item.pay * item.qty)}}</text>
-							</view>
-						</view>
-						<view class="oc-foot">
-							<text class="oc-time">{{fmtTime(order.createdAt)}} 下单</text>
-							<text class="oc-total">合计 ¥{{fmt2(order.total)}}</text>
-						</view>
-						<text v-if="lastLogText(order.no) !== ''" class="oc-logtime">最近状态：{{lastLogText(order.no)}}</text>
-						<view v-if="order.status === 'pending' || order.status === 'cooking'" class="oc-actions">
-							<button class="act act-main" :disabled="busyNo !== ''" @click="setStatus(order.no, order.status === 'pending' ? 'cooking' : 'ready')">{{order.status === 'pending' ? '开始制作' : '出餐完成'}}</button>
-							<button class="act act-print" @click="printOrder(order)">打印</button>
-							<button class="act act-cancel" @click="cancelOrder(order.no)">取消</button>
-						</view>
-						<view v-else-if="order.status === 'ready'" class="oc-actions">
-							<view class="done-tip"><text class="done-tip-text">✓ 已出餐 · 待配送</text></view>
-							<button class="act act-print" @click="printOrder(order)">打印</button>
-							<button class="act act-cancel" @click="cancelOrder(order.no)">取消</button>
-						</view>
-						<view v-else class="oc-actions">
-							<button class="act act-print" @click="printOrder(order)">打印</button>
+				<!-- ===== 数据统计 ===== -->
+				<view v-else-if="view === 'data'">
+					<view class="view-head">
+						<text class="view-title">数据统计</text>
+						<text class="view-sub">{{todayText()}}</text>
+					</view>
+					<view class="stat-row">
+						<view class="stat-card"><text class="stat-num">{{todayOrderCount}}</text><text class="stat-label">今日订单（单）</text></view>
+						<view class="stat-card"><text class="stat-num">¥{{fmt2(todayGmv)}}</text><text class="stat-label">今日营业额</text></view>
+						<view class="stat-card stat-card-last"><text class="stat-num">¥{{fmt2(todayExtra)}}</text><text class="stat-label">加价收入</text></view>
+					</view>
+					<text class="sec-title">分餐次</text>
+					<view v-for="meal in mealBlocks" :key="meal.key" class="meal-stat">
+						<text class="meal-stat-title">{{meal.title}}</text>
+						<view class="meal-stat-nums">
+							<view class="meal-stat-item"><text class="ms-num">{{meal.orderCount}}</text><text class="ms-label">订单数</text></view>
+							<view class="meal-stat-item"><text class="ms-num">¥{{fmt2(meal.gmv)}}</text><text class="ms-label">营业额</text></view>
 						</view>
 					</view>
-					<view v-if="orders.length === 0" class="order-card"><text class="muted">今日还没有订单</text></view>
-
-					<!-- 配送视图：可取餐=待配送，已送达=已完成，按取餐地点分组 -->
-					<view v-if="deliveryGroups.length > 0">
-						<text class="sec-title">配送 · 按地点</text>
-						<view v-for="g in deliveryGroups" :key="g.loc" class="deliv-card">
-							<view class="deliv-info">
-								<view class="deliv-locrow">
-									<text class="deliv-loc">{{g.loc}}</text>
-									<text v-if="g.readyNos.length === 0" class="deliv-badge">已送达</text>
-								</view>
-								<text class="deliv-meta">{{delivMeta(g)}}</text>
-							</view>
-							<button v-if="g.readyNos.length > 0" class="act-deliver" :disabled="deliveringLoc !== ''" @click="startDeliver(g)">{{deliveringLoc === g.loc ? '配送中…' : '开始配送'}}</button>
+					<text class="sec-title">热门菜品榜</text>
+					<view class="hot-card">
+						<view v-if="hotDishes.length === 0" class="hot-empty"><text class="muted">今天还没有菜品销量数据</text></view>
+						<view v-for="(h, hi) in hotDishes" :key="h.name" class="hot-row">
+							<text class="hot-rank" :class="hi < 3 ? 'hot-rank-top' : ''">{{hi + 1}}</text>
+							<text class="hot-name">{{h.name}}</text>
+							<text class="hot-qty">{{h.qty}} 份</text>
+							<text class="hot-amount">¥{{fmt2(h.amount)}}</text>
 						</view>
 					</view>
 				</view>
 
-				<!-- ===== 菜单 Tab ===== -->
-				<view v-else>
-					<view class="menu-head">
-						<view class="pill-row">
-							<view class="pill" :class="{'pill-on': menuDateMode === 'today'}" @click="switchMenuDay('today')"><text class="pill-text" :class="{'pill-text-on': menuDateMode === 'today'}">今天</text></view>
-							<view class="pill" :class="{'pill-on': menuDateMode === 'tomorrow'}" @click="switchMenuDay('tomorrow')"><text class="pill-text" :class="{'pill-text-on': menuDateMode === 'tomorrow'}">明天</text></view>
-							<view class="pill" @click="useTemplate"><text class="pill-text">按模板重生成</text></view>
-						</view>
-						<text class="menu-date-hint">{{menuDate}} · 改完点「发布菜单」才生效</text>
+				<!-- ===== 设置 ===== -->
+				<view v-else-if="view === 'settings'">
+					<view class="view-head">
+						<text class="view-title">设置</text>
+						<text class="view-sub">蓝牙打印 · 连一次即可，以后打印自动重连</text>
 					</view>
+					<view class="bt-panel">
+						<view class="bt-head">
+							<text class="bt-title">蓝牙打印机</text>
+							<view class="bt-close" @click="togglePrinterPanel"><text class="bt-close-text">{{showPrinter ? '收起面板' : '扫描连接'}}</text></view>
+						</view>
+						<text class="bt-status">状态：{{btStateText()}}</text>
+						<view v-if="showPrinter">
+							<button class="bt-scan" @click="startScan">{{btState === 'scanning' ? '搜索中… 点下面设备连接' : '搜索打印机'}}</button>
+							<text v-if="btState === 'scanning'" class="bt-status">已发现 {{btDevs.length}} 台 · 已拉取 {{btTicks}} 次 · {{btEnv === 'devtools' ? 'devtools(模拟器)' : btEnv}}</text>
+							<view v-for="(nm, index) in btDevs" :key="index" class="bt-dev" @click="pickDevice(index)">
+								<text class="bt-dev-name">{{nm}}</text>
+								<text class="bt-dev-conn">连接</text>
+							</view>
+							<text class="bt-tip">打印机先开机；搜不到就长按打印机走纸键进入配对模式再搜。连一次即可，以后打印自动重连。</text>
+						</view>
+					</view>
+					<view class="about-card">
+						<text class="about-title">关于</text>
+						<text class="about-line">富记厨房端 · 仅限店内使用</text>
+						<text class="about-line">当前日期：{{bjDateStrOf(Date.now())}}</text>
+					</view>
+				</view>
+
+				<!-- ===== 菜单管理 ===== -->
+				<view v-else>
+					<view class="view-head-row">
+						<text class="view-title">菜单管理</text>
+						<button class="act-add" @click="addDish">＋ 新增菜品</button>
+					</view>
+					<view class="pill-row">
+						<view class="pill" :class="{'pill-on': menuDateMode === 'today'}" @click="switchMenuDay('today')"><text class="pill-text" :class="{'pill-text-on': menuDateMode === 'today'}">今天</text></view>
+						<view class="pill" :class="{'pill-on': menuDateMode === 'tomorrow'}" @click="switchMenuDay('tomorrow')"><text class="pill-text" :class="{'pill-text-on': menuDateMode === 'tomorrow'}">明天</text></view>
+						<view class="pill" @click="useTemplate"><text class="pill-text">按模板重生成</text></view>
+					</view>
+					<text class="menu-date-hint">{{menuDate}} · 改完点「发布菜单」才生效</text>
 
 					<view v-for="(dish, index) in menuDishes" :key="dish.id" class="dish-card" :class="{'dish-off': dish.soldOut}">
-						<view class="dc-row1">
-							<text class="dc-name">{{dish.name === '' ? '（未命名）' : dish.name}}</text>
-							<text class="dc-price">￥{{fmt2(dish.basePrice)}}</text>
+						<view class="dish-row" @click="toggleEdit(index)">
+							<image class="dish-img" :src="dish.image" mode="aspectFill"></image>
+							<view class="dish-info">
+								<text class="dish-name">{{dish.name === '' ? '（未命名）' : dish.name}}</text>
+								<view class="dish-meta">
+									<text class="dc-cat">{{dish.category}}</text>
+									<text class="dish-badge" :class="dish.soldOut ? 'dish-badge-off' : 'dish-badge-on'">{{dish.soldOut ? '已下架' : '上架中'}}</text>
+								</view>
+							</view>
+							<view class="dish-right">
+								<text class="dish-price">¥{{fmt2(dish.basePrice)}}{{dish.canCustomPrice ? ' 起' : ''}}</text>
+								<text class="dish-edit">{{editIdx === index ? '收起' : '编辑'}}</text>
+							</view>
 						</view>
-						<view class="dc-row2">
-							<text class="dc-cat">{{dish.category}}</text>
-							<text v-if="dish.canCustomPrice" class="dc-badge dc-badge-custom">可加价</text>
-							<text v-if="dish.soldOut" class="dc-badge dc-badge-off">已售罄</text>
-						</view>
-						<view class="dc-ops">
+						<view class="dish-ops">
 							<view class="dc-op" @click="toggleSoldOut(dish)"><text class="dc-op-text">{{dish.soldOut ? '恢复售卖' : '售罄'}}</text></view>
-							<view class="dc-op" @click="openEdit(index)"><text class="dc-op-text">编辑</text></view>
 							<view class="dc-op" @click="removeDish(index)"><text class="dc-op-text dc-op-del">删除</text></view>
 						</view>
-					</view>
-					<view v-if="menuDishes.length === 0" class="order-card"><text class="muted">菜单是空的：点「＋ 添加菜品」手写，或点上方「按模板重生成」</text></view>
-
-					<view class="add-dish" @click="addDish"><text class="add-dish-text">＋ 添加菜品</text></view>
-
-					<view v-if="editIdx >= 0" class="edit-card">
-						<text class="edit-title">编辑菜品</text>
-						<view class="edit-row"><text class="edit-label">菜名</text><input class="edit-input" v-model="editName" placeholder="如：茄子肉末" placeholder-class="ph" /></view>
-						<view class="edit-row"><text class="edit-label">价格</text><input class="edit-input" type="digit" v-model="editPrice" placeholder="如：6" placeholder-class="ph" /></view>
-						<view class="edit-row"><text class="edit-label">分类</text><input class="edit-input" v-model="editCategory" placeholder="素菜 / 荤素搭配 / 纯荤" placeholder-class="ph" /></view>
-						<view class="edit-row"><text class="edit-label">描述</text><input class="edit-input" v-model="editDesc" placeholder="如：微辣 · 可加价" placeholder-class="ph" /></view>
-						<view class="edit-row">
-							<text class="edit-label">配图</text>
-							<image v-if="editImg !== ''" class="edit-img" :src="editImg" mode="aspectFill"></image>
-							<view v-else class="edit-img edit-img-empty"><text class="edit-img-empty-t">暂无图</text></view>
-							<button class="act act-gen" :disabled="genImgLoading" @click="genImage">{{genImgLoading ? '生成中，约 1~3 分钟…' : 'AI 生成配图'}}</button>
-						</view>
-						<view class="edit-chips">
-							<view class="chip-t" :class="{'chip-t-on': editCustom}" @click="toggleEditCustom"><text class="chip-t-text" :class="{'chip-t-text-on': editCustom}">可加价</text></view>
-						</view>
-						<view class="edit-btns">
-							<button class="act act-main" @click="saveEdit">保存该菜</button>
-							<button class="act act-cancel" @click="closeEdit">取消</button>
+						<view v-if="editIdx === index" class="edit-card">
+							<text class="edit-title">编辑菜品</text>
+							<view class="edit-row"><text class="edit-label">菜名</text><input class="edit-input" v-model="editName" placeholder="如：茄子肉末" placeholder-class="ph" /></view>
+							<view class="edit-row"><text class="edit-label">价格</text><input class="edit-input" type="digit" v-model="editPrice" placeholder="如：6" placeholder-class="ph" /></view>
+							<view class="edit-row"><text class="edit-label">分类</text><input class="edit-input" v-model="editCategory" placeholder="素菜 / 荤素搭配 / 纯荤" placeholder-class="ph" /></view>
+							<view class="edit-row"><text class="edit-label">描述</text><input class="edit-input" v-model="editDesc" placeholder="如：微辣 · 可加价" placeholder-class="ph" /></view>
+							<view class="edit-row">
+								<text class="edit-label">配图</text>
+								<image v-if="editImg !== ''" class="edit-img" :src="editImg" mode="aspectFill"></image>
+								<view v-else class="edit-img edit-img-empty"><text class="edit-img-empty-t">暂无图</text></view>
+								<button class="act act-gen" :disabled="genImgLoading" @click="genImage">{{genImgLoading ? '生成中，约 1~3 分钟…' : 'AI 生成配图'}}</button>
+							</view>
+							<view class="edit-chips">
+								<view class="chip-t" :class="{'chip-t-on': editCustom}" @click="toggleEditCustom"><text class="chip-t-text" :class="{'chip-t-text-on': editCustom}">可加价</text></view>
+							</view>
+							<view class="edit-btns">
+								<button class="act act-main" @click="saveEdit">保存该菜</button>
+								<button class="act act-cancel" @click="closeEdit">取消</button>
+							</view>
 						</view>
 					</view>
+					<view v-if="menuDishes.length === 0" class="empty-card"><text class="muted">菜单是空的：点「＋ 新增菜品」手写，或点上方「按模板重生成」</text></view>
 
 					<view class="pub-row">
 						<view class="chip-t" :class="{'chip-t-on': menuSyncTpl}" @click="toggleSyncTpl"><text class="chip-t-text" :class="{'chip-t-text-on': menuSyncTpl}">同步为模板</text></view>
@@ -191,9 +257,10 @@
 					<button class="primary" :disabled="publishing" @click="publishMenu">{{publishing ? '发布中…' : '发布菜单'}}</button>
 				</view>
 
-				<view class="footer-space"></view>
-			</view>
-		</scroll-view>
+					<view class="footer-space"></view>
+				</view>
+			</scroll-view>
+		</view>
 		<view v-if="toastMessage !== ''" class="toast">{{toastMessage}}</view>
 	</view>
 </template>
@@ -207,8 +274,12 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 	type DishLine = { name: string; qty: number; amount: number }
 	type MealBlock = { key: string; title: string; state: string; stateCls: string; lines: DishLine[]; orderCount: number; gmv: number; customExtra: number }
 	type MenuDish = { id: string; category: string; name: string; desc: string; basePrice: number; canCustomPrice: boolean; image: string; soldOut: boolean }
-	// 配送分组：readyNos=待配送单号（可点「开始配送」），doneCount/doneTotal=组内已送达部分
-	type DeliverGroup = { loc: string; readyNos: string[]; doneCount: number; readyTotal: number; doneTotal: number }
+	// 配送分组：state=ready待配送/delivering配送中/done已送达；readyNos=待配送单号
+	type DelivGroup = { loc: string; state: string; readyNos: string[]; doneCount: number; readyTotal: number; doneTotal: number }
+	// 订单管理视图的地点分组
+	type OrderGroup = { loc: string; orders: AdminOrder[]; total: number }
+	// 热门菜品榜行（两餐 dishLines 合并）
+	type HotDish = { name: string; qty: number; amount: number }
 
 
 	const showGate = ref(false)
@@ -227,8 +298,23 @@ import { showPrinter, btState, btDevs, btTicks, btEnv, btStateText, startScan, p
 	const deliveringLoc = ref('') // 正在批量标记送达的地点（防重复触发）
 	var orderLogs: Map<string, UTSJSONObject> = new Map() // 单号 → status_log（非响应式，随每次 summary 重建，渲染时 orders 变化会重新取）
 
+	// ---------- 视图切换 ----------
+	type NavItem = { key: string; icon: string; label: string }
+	const navItems: NavItem[] = [
+		{ key: 'home', icon: '🏠', label: '首页' },
+		{ key: 'orders', icon: '📋', label: '订单' },
+		{ key: 'menu', icon: '🍚', label: '菜单' },
+		{ key: 'delivery', icon: '🛵', label: '配送' },
+		{ key: 'data', icon: '📊', label: '数据' },
+		{ key: 'settings', icon: '⚙️', label: '设置' }
+	]
+	const view = ref('home')
+	const orderFilter = ref('all') // all | pending | cooking | ready | delivered
+	const delivFilter = ref('ready') // ready | delivering | done
+	const expandedLoc = ref('') // 订单管理里展开的地点（单开）
+	const deliveringLocs = ref<string[]>([]) // 配送中的地点（持久化到 xk_delivering）
+
 	// ---------- 菜单发布 ----------
-	const tab = ref('orders')
 	const menuDateMode = ref('today') // today | tomorrow
 	const menuDate = ref('')
 	const menuDishes = ref<MenuDish[]>([])
@@ -446,7 +532,7 @@ initPrinter(toast)
 		})
 	}
 
-	// ---------- 配送视图 ----------
+	// ---------- 状态时间辅助（订单行最后状态时间） ----------
 	function pad2(n: number): string { return n < 10 ? '0' + n : '' + n }
 
 	// 北京时间 MM-DD HH:mm（与 bjDateStrOf 同口径：平移到北京墙上钟后按 UTC 读）
@@ -471,10 +557,32 @@ initPrinter(toast)
 		return label + ' ' + fmtBjMDHM(best)
 	}
 
-	// ready=待配送，delivered=已完成，按 customer.location 分组（空归「未填地点」），待配送组排前
-	const deliveryGroups = computed((): DeliverGroup[] => {
+	// ---------- 配送管理 ----------
+	function saveDeliveringLocs() { uni.setStorageSync('xk_delivering', deliveringLocs.value) }
+
+	// 回前台/启动时恢复配送中地点（坏数据逐项过滤丢弃）
+	function restoreDeliveringLocs() {
+		const v = uni.getStorageSync('xk_delivering')
+		const arr: string[] = []
+		if (v instanceof Array) {
+			const raw = v as Array<any>
+			for (let i = 0; i < raw.length; i++) {
+				const s = raw[i]
+				if (s instanceof String || typeof s === 'string') { arr.push(s as string) }
+			}
+		}
+		deliveringLocs.value = arr
+	}
+
+	function removeDeliveringLoc(loc: string) {
+		const idx = deliveringLocs.value.indexOf(loc)
+		if (idx >= 0) { deliveringLocs.value.splice(idx, 1); saveDeliveringLocs() }
+	}
+
+	// ready/delivered 订单按 customer.location 分组（空归「未填地点」），按配送中→待配送→已送达排序，并按筛选过滤
+	const delivGroups = computed((): DelivGroup[] => {
 		const list = orders.value
-		const grouped: DeliverGroup[] = []
+		const grouped: DelivGroup[] = []
 		const locs: string[] = []
 		for (let i = 0; i < list.length; i++) {
 			const o = list[i]
@@ -483,7 +591,7 @@ initPrinter(toast)
 			let idx = locs.indexOf(loc)
 			if (idx < 0) {
 				locs.push(loc)
-				const ng: DeliverGroup = { loc: loc, readyNos: [], doneCount: 0, readyTotal: 0, doneTotal: 0 }
+				const ng: DelivGroup = { loc: loc, state: 'ready', readyNos: [], doneCount: 0, readyTotal: 0, doneTotal: 0 }
 				grouped.push(ng)
 				idx = grouped.length - 1
 			}
@@ -491,29 +599,51 @@ initPrinter(toast)
 			if (o.status === 'ready') { g.readyNos.push(o.no); g.readyTotal += o.total }
 			else { g.doneCount += 1; g.doneTotal += o.total }
 		}
-		const out: DeliverGroup[] = []
-		for (let i = 0; i < grouped.length; i++) { if (grouped[i].readyNos.length > 0) { out.push(grouped[i]) } }
-		for (let i = 0; i < grouped.length; i++) { if (grouped[i].readyNos.length === 0) { out.push(grouped[i]) } }
+		for (let i = 0; i < grouped.length; i++) {
+			const g = grouped[i]
+			if (g.readyNos.length === 0) { g.state = 'done' }
+			else if (deliveringLocs.value.indexOf(g.loc) >= 0) { g.state = 'delivering' }
+			else { g.state = 'ready' }
+		}
+		const out: DelivGroup[] = []
+		const rank: string[] = ['delivering', 'ready', 'done']
+		for (let r = 0; r < rank.length; r++) {
+			for (let i = 0; i < grouped.length; i++) {
+				if (grouped[i].state === rank[r] && grouped[i].state === delivFilter.value) { out.push(grouped[i]) }
+			}
+		}
 		return out
 	})
 
-	function delivMeta(g: DeliverGroup): string {
+	function delivStateText(state: string): string { if (state === 'delivering') return '配送中'; if (state === 'done') return '已送达'; return '待配送' }
+
+	function delivMeta(g: DelivGroup): string {
 		const total = g.readyTotal + g.doneTotal
 		if (g.readyNos.length > 0 && g.doneCount > 0) { return '已送达 ' + g.doneCount + ' · 待配送 ' + g.readyNos.length + ' · 共 ¥' + fmt2(total) }
 		if (g.readyNos.length > 0) { return '待配送 ' + g.readyNos.length + ' 单 · ¥' + fmt2(total) }
 		return g.doneCount + ' 单 · ¥' + fmt2(total)
 	}
 
-	function startDeliver(g: DeliverGroup) {
+	// 开始配送：仅把地点标记为配送中（持久化），不动订单状态
+	function startDeliver(g: DelivGroup) {
 		if (deliveringLoc.value !== '') return
+		if (deliveringLocs.value.indexOf(g.loc) >= 0) return
+		deliveringLocs.value.push(g.loc)
+		saveDeliveringLocs()
+		toast('「' + g.loc + '」开始配送')
+	}
+
+	function finishDeliver(g: DelivGroup) {
+		if (deliveringLoc.value !== '') return
+		if (g.readyNos.length === 0) { toast('该地点没有待配送订单'); return }
 		uni.showModal({
-			title: '开始配送',
+			title: '完成配送',
 			content: '把「' + g.loc + '」的 ' + g.readyNos.length + ' 单标记为已送达？',
 			success: (res) => { if (res.confirm === true) { doDeliverGroup(g.loc, g.readyNos) } }
 		})
 	}
 
-	// 逐单调 updateStatus status='delivered'，结束后提示并刷新汇总（部分失败也刷新，成功的先生效）
+	// 逐单调 updateStatus status='delivered'，结束后移出配送中并刷新汇总（部分失败也刷新，成功的先生效）
 	async function doDeliverGroup(loc: string, nos: string[]) {
 		deliveringLoc.value = loc
 		let okCount = 0
@@ -522,16 +652,94 @@ initPrinter(toast)
 			if (result !== null && result.getBoolean('ok') === true) { okCount++ }
 		}
 		deliveringLoc.value = ''
+		removeDeliveringLoc(loc)
 		if (okCount === nos.length) { toast('该地点 ' + okCount + ' 单已标记送达') }
 		else { toast('已送达 ' + okCount + '/' + nos.length + ' 单，未成功的可重试') }
 		loadSummary()
 	}
 
+	// ---------- 数据统计 ----------
+	const todayOrderCount = computed((): number => { let n = 0; for (let i = 0; i < mealBlocks.value.length; i++) { n += mealBlocks.value[i].orderCount } return n })
+	const todayGmv = computed((): number => { let g = 0; for (let i = 0; i < mealBlocks.value.length; i++) { g += mealBlocks.value[i].gmv } return g })
+	const todayExtra = computed((): number => { let e = 0; for (let i = 0; i < mealBlocks.value.length; i++) { e += mealBlocks.value[i].customExtra } return e })
+	const activeOrderCount = computed((): number => { let n = 0; for (let i = 0; i < orders.value.length; i++) { if (orders.value[i].status !== 'canceled') { n++ } } return n })
+
+	// 热门菜品榜：两餐 dishLines 合并按份数降序取前 8（选择排序，菜量小无需 sort）
+	const hotDishes = computed((): HotDish[] => {
+		const names: string[] = []
+		const qtys: number[] = []
+		const amts: number[] = []
+		for (let i = 0; i < mealBlocks.value.length; i++) {
+			const lines = mealBlocks.value[i].lines
+			for (let j = 0; j < lines.length; j++) {
+				const l = lines[j]
+				let idx = names.indexOf(l.name)
+				if (idx < 0) { names.push(l.name); qtys.push(0); amts.push(0); idx = names.length - 1 }
+				qtys[idx] += l.qty
+				amts[idx] += l.amount
+			}
+		}
+		const pool: HotDish[] = []
+		for (let i = 0; i < names.length; i++) { pool.push({ name: names[i], qty: qtys[i], amount: amts[i] }) }
+		const out: HotDish[] = []
+		while (out.length < 8 && pool.length > 0) {
+			let mi = 0
+			for (let i = 1; i < pool.length; i++) { if (pool[i].qty > pool[mi].qty) { mi = i } }
+			out.push(pool[mi])
+			pool.splice(mi, 1)
+		}
+		return out
+	})
+
+	// ---------- 订单管理：按配送地点分组（筛选后分组，canceled 仅在「今日订单」下显示且不计金额） ----------
+	const orderGroups = computed((): OrderGroup[] => {
+		const f = orderFilter.value
+		const list = orders.value
+		const out: OrderGroup[] = []
+		const locs: string[] = []
+		for (let i = 0; i < list.length; i++) {
+			const o = list[i]
+			if (f !== 'all' && o.status !== f) { continue }
+			const loc = o.location.trim() === '' ? '未填地点' : o.location.trim()
+			let idx = locs.indexOf(loc)
+			if (idx < 0) {
+				locs.push(loc)
+				const ng: OrderGroup = { loc: loc, orders: [], total: 0 }
+				out.push(ng)
+				idx = out.length - 1
+			}
+			const g = out[idx]
+			g.orders.push(o)
+			if (o.status !== 'canceled') { g.total += o.total }
+		}
+		return out
+	})
+
 	// ================= 菜单发布 =================
 
-	function switchTab(t: string) {
-		tab.value = t
+	function switchView(t: string) {
+		view.value = t
 		if (t === 'menu' && !menuLoadedOnce) { menuLoadedOnce = true; loadMenu() }
+	}
+
+	// 首页「发布明日菜单」：切到菜单管理并定位到明天
+	function goTomorrowMenu() {
+		menuDateMode.value = 'tomorrow'
+		if (menuLoadedOnce) { loadMenu() }
+		switchView('menu')
+	}
+
+	function todayText(): string { return sumDate.value !== '' ? sumDate.value : bjDateStrOf(Date.now()) }
+
+	function toggleGroup(loc: string) { expandedLoc.value = expandedLoc.value === loc ? '' : loc }
+
+	function toggleEdit(index: number) { if (editIdx.value === index) { editIdx.value = -1 } else { openEdit(index) } }
+
+	// 订单明细摘要：菜名×份数用顿号连接
+	function itemsSummary(o: AdminOrder): string {
+		let s = ''
+		for (let i = 0; i < o.items.length; i++) { const it = o.items[i]; s += (i > 0 ? '、' : '') + it.name + '×' + it.qty }
+		return s === '' ? '无明细' : s
 	}
 
 	function switchMenuDay(mode: string) {
@@ -763,14 +971,17 @@ initPrinter(toast)
 	}
 	schedulePoll()
 	onUnmounted(() => { if (autoTimer !== -1) { clearTimeout(autoTimer) } })
+	// 每次页面显示（含首次进入与切回）恢复「配送中」地点
+	onShow(() => { restoreDeliveringLocs() })
 </script>
 
 <style>
 	.page { flex: 1; background-color: #F6F3EB; color: #22301F; }
 	.net-lost { margin: 12rpx 24rpx 0; padding: 12rpx 20rpx; background-color: #1D4226; border-radius: 12rpx; }
 	.net-lost-text { font-size: 24rpx; color: #F6F3EB; }
-	.scroll { flex: 1; }
-	.content { padding: 24px 16px 36px; }
+	.shell { flex: 1; flex-direction: row; }
+	.main { flex: 1; }
+	.content { padding: 18px 14px 36px; }
 	.muted { color: #8C9689; font-size: 12px; }
 	/* ---------- 口令门 ---------- */
 	.gate { flex: 1; display: flex; align-items: center; justify-content: center; padding: 0 28px; }
@@ -784,18 +995,37 @@ initPrinter(toast)
 	.gate-err { color: #24522F; font-size: 12px; font-weight: 600; margin-top: 10px; }
 	/* ---------- 通用按钮 ---------- */
 	.primary { width: 100%; height: 46px; background-color: #2F6B3F; background-image: linear-gradient(180deg, #2F6B3F, #24522F 55%, #1D4226); color: #FFFFFF; border: 0; border-radius: 13px; font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-top: 16px; box-shadow: 0 8px 18px rgba(47,107,63,.3); }
-	/* ---------- 头部 ---------- */
-	.header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-	.page-title { display: block; font-family: serif; font-size: 24px; font-weight: 900; letter-spacing: .1em; color: #22301F; }
-	.header-sub { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 4px; }
-	.header-btns { display: flex; flex-direction: row; align-items: center; }
-	.refresh { width: 64px; height: 36px; background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 999px; font-size: 13px; color: #24522F; padding: 0; line-height: 34px; margin-left: 8px; }
-	/* ---------- Tab ---------- */
-	.tabs { display: flex; flex-direction: row; margin-top: 16px; background-color: #E9F1E7; border-radius: 12px; padding: 3px; }
-	.tab { flex: 1; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-	.tab-on { background-color: #2F6B3F; box-shadow: 0 2px 6px rgba(47,107,63,.25); }
-	.tab-text { font-size: 14px; font-weight: 600; color: #8C9689; }
-	.tab-text-on { color: #FFFFFF; font-weight: 700; }
+	/* ---------- 侧边栏 ---------- */
+	.side { width: 66px; background-color: #1D4226; display: flex; flex-direction: column; align-items: center; padding-top: 16px; }
+	.side-logo { width: 40px; height: 40px; border-radius: 12px; background-color: #2F6B3F; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+	.side-logo-char { color: #F6F3EB; font-family: serif; font-size: 20px; font-weight: 900; }
+	.side-item { width: 54px; border-radius: 10px; padding: 8px 0; margin-bottom: 4px; display: flex; flex-direction: column; align-items: center; border-left-width: 3px; border-left-style: solid; border-left-color: rgba(0,0,0,0); }
+	.side-item-on { background-color: rgba(255,255,255,.12); border-left-color: #FFFFFF; }
+	.side-icon { font-size: 16px; }
+	.side-label { font-size: 10px; color: rgba(246,243,235,.75); margin-top: 3px; }
+	.side-label-on { color: #FFFFFF; font-weight: 700; }
+	/* ---------- 视图外壳 ---------- */
+	.view-head { margin-bottom: 14px; }
+	.view-head-row { display: flex; flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+	.view-title { display: block; font-family: serif; font-size: 22px; font-weight: 900; letter-spacing: .06em; color: #22301F; }
+	.view-sub { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 4px; }
+	/* ---------- 统计卡 ---------- */
+	.stat-row { display: flex; flex-direction: row; margin-bottom: 12px; }
+	.stat-card { flex: 1; background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 14px 8px; margin-right: 10px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
+	.stat-card-last { margin-right: 0; }
+	.stat-num { font-family: monospace; font-size: 21px; font-weight: 900; color: #2F6B3F; }
+	.stat-label { font-size: 11px; color: #8C9689; margin-top: 6px; }
+	/* ---------- 快捷流程 ---------- */
+	.quick-grid { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: space-between; }
+	.quick-item { width: 49%; background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 16px 0; margin-bottom: 10px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
+	.quick-icon { font-size: 22px; }
+	.quick-label { font-size: 12.5px; font-weight: 700; color: #22301F; margin-top: 6px; }
+	/* ---------- 筛选 chips ---------- */
+	.chip-row { display: flex; flex-direction: row; flex-wrap: wrap; margin-bottom: 12px; }
+	.chip-f { padding: 6px 12px; border-radius: 999px; background-color: #FFFFFF; border: 1px solid #E7E3D6; margin-right: 8px; margin-bottom: 8px; }
+	.chip-f-on { background-color: #2F6B3F; border-color: #2F6B3F; }
+	.chip-f-text { font-size: 12px; color: #24522F; font-weight: 600; }
+	.chip-f-text-on { color: #FFFFFF; }
 	/* ---------- 蓝牙面板 ---------- */
 	.bt-panel { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 16px; padding: 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(34,48,31,.05); }
 	.bt-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
@@ -808,33 +1038,30 @@ initPrinter(toast)
 	.bt-dev-name { font-size: 14px; font-weight: 600; color: #22301F; }
 	.bt-dev-conn { font-size: 12px; color: #2F6B3F; font-weight: 700; }
 	.bt-tip { display: block; font-size: 11.5px; color: #8C9689; margin-top: 8px; }
-	/* ---------- 汇总卡 ---------- */
-	.sum-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 16px; padding: 14px; margin-top: 14px; box-shadow: 0 6px 14px rgba(34,48,31,.05); }
-	.sum-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px dashed #E7E3D6; }
-	.sum-date { font-family: serif; font-size: 20px; font-weight: 900; letter-spacing: .06em; color: #22301F; }
-	.sum-badge { border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
-	.badge-cut { background-color: #1D4226; color: #E9F1E7; }
-	.badge-live { background-color: #F3F7F1; color: #2F6B3F; }
-	.badge-ready { background-color: #2F6B3F; color: #FFFFFF; }
-	.badge-closed { background-color: #E7E3D6; color: #8C9689; }
-	.badge-delivered { background-color: #24522F; color: #F6F3EB; }
-	.line { display: flex; flex-direction: row; align-items: center; padding: 9px 0; border-bottom: 1px dashed #E7E3D6; }
-	.line-name { flex: 1; font-size: 14px; font-weight: 600; color: #22301F; }
-	.line-qty { font-family: monospace; font-size: 13px; color: #8C9689; }
-	.line-amount { font-family: monospace; font-size: 14px; font-weight: 800; color: #22301F; margin-left: 14px; min-width: 72px; text-align: right; }
-	.sum-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-top: 10px; }
-	.sum-meta { font-size: 12px; color: #8C9689; font-weight: 700; }
-	.sum-total { font-family: monospace; font-size: 17px; font-weight: 900; color: #2F6B3F; }
-	.meal-block { margin-top: 12px; }
-	.meal-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px dashed #E7E3D6; }
-	.meal-title { font-size: 15px; font-weight: 800; letter-spacing: .06em; color: #22301F; }
+	/* ---------- 地点分组卡 ---------- */
+	.grp-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
+	.grp-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
+	.grp-locrow { display: flex; flex-direction: row; align-items: center; }
+	.grp-loc { font-size: 15px; font-weight: 800; color: #22301F; }
+	.grp-badge { background-color: #E9F1E7; color: #2F6B3F; border-radius: 7px; padding: 2px 8px; font-size: 11px; font-weight: 700; margin-left: 8px; }
+	.grp-right { display: flex; flex-direction: row; align-items: center; }
+	.grp-total { font-family: monospace; font-size: 15px; font-weight: 800; color: #2F6B3F; margin-right: 10px; }
+	.grp-toggle { font-size: 11.5px; color: #8C9689; font-weight: 600; border: 1px solid #E7E3D6; border-radius: 999px; padding: 4px 10px; }
+	.grp-body { margin-top: 10px; border-top: 1px dashed #E7E3D6; }
+	.grp-order { padding: 10px 0; border-bottom: 1px dashed #E7E3D6; }
+	.go-row1 { display: flex; flex-direction: row; align-items: center; }
+	.go-no { font-family: monospace; font-size: 12.5px; font-weight: 800; letter-spacing: .02em; color: #22301F; }
+	.go-status { margin-left: 8px; }
+	.go-right { display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; }
+	.go-time { font-family: monospace; font-size: 10.5px; color: #8C9689; }
+	.go-total { font-family: monospace; font-size: 14px; font-weight: 800; color: #2F6B3F; margin-top: 2px; }
+	.go-items { display: block; font-size: 12.5px; color: #22301F; margin-top: 6px; }
+	.go-row2 { display: flex; flex-direction: row; align-items: center; margin-top: 8px; }
+	.go-ready-tip { flex: 1; font-size: 12px; color: #2F6B3F; font-weight: 700; }
+	.empty-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
 	.sec-title { display: block; color: #8C9689; font-size: 11px; font-weight: 700; letter-spacing: .2em; margin: 18px 2px 8px; }
-	/* ---------- 订单卡 ---------- */
-	.order-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 16px; padding: 13px 14px; margin-bottom: 12px; box-shadow: 0 6px 14px rgba(34,48,31,.05); }
+	/* ---------- 订单徽章/操作 ---------- */
 	.order-cancel { opacity: .55; }
-	.oc-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-	.oc-no { font-family: monospace; font-size: 13px; font-weight: 800; letter-spacing: .04em; color: #22301F; }
-	.oc-no-row { display: flex; flex-direction: row; align-items: center; }
 	.oc-meal { border-radius: 7px; padding: 2px 8px; font-size: 10.5px; font-weight: 700; margin-left: 8px; }
 	.meal-lunch { background-color: #E9F1E7; color: #2F6B3F; }
 	.meal-dinner { background-color: #1D4226; color: #E9F1E7; }
@@ -844,37 +1071,32 @@ initPrinter(toast)
 	.st-ready { background-color: #E9F1E7; color: #2F6B3F; }
 	.st-delivered { background-color: #2F6B3F; color: #FFFFFF; }
 	.st-cancel { background-color: #E7E3D6; color: #8C9689; }
-	.oc-cust { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; margin-top: 9px; }
-	.oc-name { font-size: 14px; font-weight: 700; color: #22301F; }
-	.oc-phone { font-family: monospace; font-size: 12px; color: #8C9689; margin-left: 9px; }
 	.oc-note { display: block; color: #24522F; font-size: 12px; margin-top: 5px; }
-	.oc-items { margin-top: 8px; border-top: 1px dashed #E7E3D6; }
-	.oc-item { display: flex; flex-direction: row; justify-content: space-between; padding: 6px 0; }
-	.oc-item-name { font-size: 13px; color: #22301F; }
-	.oc-item-price { font-family: monospace; font-size: 13px; color: #22301F; }
-	.oc-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; border-top: 1px dashed #E7E3D6; padding-top: 9px; margin-top: 2px; }
-	.oc-time { font-family: monospace; font-size: 11.5px; color: #8C9689; }
-	.oc-total { font-family: monospace; font-size: 15px; font-weight: 800; color: #2F6B3F; }
 	.oc-logtime { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 6px; }
-	.oc-actions { display: flex; flex-direction: row; align-items: center; margin-top: 11px; }
 	.act { height: 40px; border-radius: 11px; font-size: 13.5px; font-weight: 700; margin: 0; padding: 0; line-height: 38px; }
 	.act-main { flex: 1; background-color: #2F6B3F; background-image: linear-gradient(180deg, #2F6B3F, #24522F 55%, #1D4226); color: #FFFFFF; border: 0; box-shadow: 0 4px 10px rgba(47,107,63,.28); }
 	.act-main[disabled] { background-color: #E7E3D6; background-image: none; box-shadow: none; color: #8C9689; }
-	.act-print { width: 64px; background-color: #FFFFFF; border: 1px solid #E7E3D6; color: #24522F; margin-left: 9px; }
 	.act-cancel { width: 86px; background-color: #FFFFFF; border: 1px solid #E7E3D6; color: #8C9689; margin-left: 9px; }
-	.done-tip { flex: 1; background-color: #E9F1E7; border-radius: 11px; height: 40px; display: flex; align-items: center; justify-content: center; }
-	.done-tip-text { color: #2F6B3F; font-size: 13px; font-weight: 700; }
-	/* ---------- 配送视图 ---------- */
+	.act-mini { height: 32px; border-radius: 9px; font-size: 12px; font-weight: 700; line-height: 30px; padding: 0 12px; margin: 0; }
+	.act-mini-main { background-color: #2F6B3F; color: #FFFFFF; border: 0; margin-right: 8px; box-shadow: 0 3px 8px rgba(47,107,63,.25); }
+	.act-mini-main[disabled] { background-color: #E7E3D6; background-image: none; box-shadow: none; color: #8C9689; }
+	.act-mini-ghost { background-color: #FFFFFF; border: 1px solid #E7E3D6; color: #24522F; margin-right: 8px; }
+	.act-mini-cancel { background-color: #FFFFFF; border: 1px solid #E7E3D6; color: #8C9689; }
+	/* ---------- 配送管理 ---------- */
 	.deliv-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; display: flex; flex-direction: row; align-items: center; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
 	.deliv-info { flex: 1; }
 	.deliv-locrow { display: flex; flex-direction: row; align-items: center; }
 	.deliv-loc { font-size: 15px; font-weight: 800; color: #22301F; }
-	.deliv-badge { background-color: #24522F; color: #F6F3EB; border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; margin-left: 8px; }
+	.deliv-badge { border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; margin-left: 8px; }
+	.deliv-badge-ready { background-color: #F3F7F1; color: #2F6B3F; }
+	.deliv-badge-doing { background-color: #1D4226; color: #E9F1E7; }
+	.deliv-badge-done { background-color: #24522F; color: #F6F3EB; }
 	.deliv-meta { display: block; font-family: monospace; font-size: 12px; color: #8C9689; margin-top: 5px; }
 	.act-deliver { width: 96px; height: 40px; background-color: #2F6B3F; background-image: linear-gradient(180deg, #2F6B3F, #24522F); color: #FFFFFF; border: 0; border-radius: 11px; font-size: 13px; font-weight: 700; line-height: 40px; padding: 0; margin: 0; box-shadow: 0 4px 10px rgba(47,107,63,.28); }
+	.act-deliver-done { background-image: linear-gradient(180deg, #24522F, #1D4226); }
 	.act-deliver[disabled] { background-color: #E7E3D6; background-image: none; box-shadow: none; color: #8C9689; }
-	/* ---------- 菜单发布 ---------- */
-	.menu-head { margin-top: 14px; }
+	/* ---------- 菜单管理 ---------- */
+	.act-add { height: 34px; background-color: #2F6B3F; color: #FFFFFF; border: 0; border-radius: 999px; font-size: 12.5px; font-weight: 700; line-height: 34px; padding: 0 14px; margin: 0; box-shadow: 0 4px 10px rgba(47,107,63,.25); }
 	.pill-row { display: flex; flex-direction: row; align-items: center; }
 	.pill { padding: 7px 14px; border-radius: 999px; background-color: #FFFFFF; border: 1px solid #E7E3D6; margin-right: 8px; }
 	.pill-on { background-color: #2F6B3F; border-color: #2F6B3F; }
@@ -883,21 +1105,42 @@ initPrinter(toast)
 	.menu-date-hint { display: block; font-family: monospace; font-size: 11px; color: #8C9689; margin-top: 8px; }
 	.dish-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 11px 13px; margin-top: 10px; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
 	.dish-off { opacity: .55; }
-	.dc-row1 { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-	.dc-name { font-size: 14.5px; font-weight: 700; color: #22301F; }
-	.dc-price { font-family: monospace; font-size: 14px; font-weight: 800; color: #2F6B3F; }
-	.dc-row2 { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+	.dish-row { display: flex; flex-direction: row; align-items: center; }
+	.dish-img { width: 44px; height: 44px; border-radius: 10px; background-color: #E7E3D6; }
+	.dish-info { flex: 1; margin-left: 10px; }
+	.dish-name { font-size: 14.5px; font-weight: 700; color: #22301F; }
+	.dish-meta { display: flex; flex-direction: row; align-items: center; margin-top: 5px; }
+	.dish-badge { font-size: 10.5px; border-radius: 6px; padding: 2px 7px; font-weight: 700; }
+	.dish-badge-on { background-color: #E9F1E7; color: #2F6B3F; }
+	.dish-badge-off { background-color: #E7E3D6; color: #8C9689; }
+	.dish-right { display: flex; flex-direction: column; align-items: flex-end; }
+	.dish-price { font-family: monospace; font-size: 14px; font-weight: 800; color: #2F6B3F; }
+	.dish-edit { font-size: 11px; color: #8C9689; font-weight: 600; border: 1px solid #E7E3D6; border-radius: 999px; padding: 3px 9px; margin-top: 6px; }
+	.dish-ops { display: flex; flex-direction: row; margin-top: 9px; border-top: 1px dashed #E7E3D6; padding-top: 9px; }
 	.dc-cat { font-size: 11px; color: #8C9689; border: 1px solid #E7E3D6; border-radius: 6px; padding: 2px 7px; }
-	.dc-badge { font-size: 10.5px; border-radius: 6px; padding: 2px 7px; margin-left: 6px; font-weight: 700; }
-	.dc-badge-custom { background-color: #E9F1E7; color: #2F6B3F; }
-	.dc-badge-off { background-color: #1D4226; color: #E9F1E7; }
-	.dc-ops { display: flex; flex-direction: row; margin-top: 9px; border-top: 1px dashed #E7E3D6; padding-top: 9px; }
 	.dc-op { padding: 5px 12px; background-color: #F3F7F1; border-radius: 8px; margin-right: 8px; }
 	.dc-op-text { font-size: 12px; color: #24522F; font-weight: 600; }
 	.dc-op-del { color: #24522F; font-weight: 700; }
-	.add-dish { height: 46px; border: 1px dashed rgba(47,107,63,.4); border-radius: 14px; margin-top: 12px; display: flex; align-items: center; justify-content: center; }
-	.add-dish-text { color: #2F6B3F; font-size: 13.5px; font-weight: 600; }
 	.edit-card { background-color: #F3F7F1; border: 1px solid rgba(47,107,63,.35); border-radius: 16px; padding: 14px; margin-top: 12px; }
+	/* ---------- 数据统计 ---------- */
+	.meal-stat { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
+	.meal-stat-title { font-size: 15px; font-weight: 800; color: #22301F; }
+	.meal-stat-nums { display: flex; flex-direction: row; }
+	.meal-stat-item { display: flex; flex-direction: column; align-items: flex-end; margin-left: 24px; }
+	.ms-num { font-family: monospace; font-size: 17px; font-weight: 900; color: #2F6B3F; }
+	.ms-label { font-size: 10.5px; color: #8C9689; margin-top: 2px; }
+	.hot-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 6px 14px; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
+	.hot-row { display: flex; flex-direction: row; align-items: center; padding: 9px 0; border-bottom: 1px dashed #E7E3D6; }
+	.hot-empty { padding: 12px 0; display: flex; justify-content: center; }
+	.hot-rank { width: 22px; height: 22px; border-radius: 6px; background-color: #F3F7F1; color: #8C9689; font-size: 11px; font-weight: 800; text-align: center; line-height: 22px; }
+	.hot-rank-top { background-color: #2F6B3F; color: #FFFFFF; }
+	.hot-name { flex: 1; font-size: 13.5px; font-weight: 600; color: #22301F; margin-left: 10px; }
+	.hot-qty { font-size: 12px; color: #8C9689; }
+	.hot-amount { font-family: monospace; font-size: 13px; font-weight: 800; color: #22301F; margin-left: 12px; min-width: 56px; text-align: right; }
+	/* ---------- 设置 ---------- */
+	.about-card { background-color: #FFFFFF; border: 1px solid #E7E3D6; border-radius: 14px; padding: 14px; margin-top: 14px; box-shadow: 0 4px 10px rgba(34,48,31,.04); }
+	.about-title { display: block; font-size: 13px; font-weight: 800; color: #24522F; letter-spacing: .08em; }
+	.about-line { display: block; font-size: 12px; color: #8C9689; margin-top: 6px; }
 	.edit-title { display: block; font-size: 13px; font-weight: 800; color: #24522F; letter-spacing: .08em; }
 	.edit-row { display: flex; flex-direction: row; align-items: center; margin-top: 10px; }
 	.edit-label { width: 42px; font-size: 12.5px; color: #8C9689; }
