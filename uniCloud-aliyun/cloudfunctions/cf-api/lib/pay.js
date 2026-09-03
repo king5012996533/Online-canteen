@@ -15,7 +15,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { WX_APPID, MCH_ID, MCH_SERIAL_NO, APIV3_KEY, PAY_NOTIFY_URL } = require('./config.js');
+const { WX_APPID, MCH_ID, MCH_SERIAL_NO, APIV3_KEY, PAY_NOTIFY_URL, MIN_ORDER_TOTAL } = require('./config.js');
 const { ok, fail, round2 } = require('./util.js');
 
 function payConfigured() {
@@ -85,6 +85,10 @@ async function payCreate(p) {
 	if (own.err) { return fail(own.err); }
 	const order = own.order;
 	if (order.pay_status === 'paid') { return ok({ paid: true }); }
+	// 第二道起送金额锁：即使历史脏数据/绕过下单接口产生的低额订单，也不允许支付
+	if ((typeof order.total === 'number' ? order.total : 0) < MIN_ORDER_TOTAL) {
+		return fail('订单未达 ¥' + MIN_ORDER_TOTAL + ' 起送，无法支付');
+	}
 
 	// JSAPI 支付必须知道付款人 openid：游客订单（uid 为空）无法在线支付
 	let openid = '';

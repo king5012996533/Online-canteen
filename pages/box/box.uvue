@@ -106,7 +106,7 @@
 				<view class="deliver-line"><text class="deliver-label">配送时间</text><text class="deliver-value">{{deliveryLabel}}</text></view>
 				<view class="deliver-line"><text class="deliver-label">配送地点</text><text class="deliver-value">{{customer.location || '公司前台'}}</text></view>
 			</view>
-			<button class="g-btn-primary cta" :disabled="totalCount === 0" @click="goConfirm">确认下单 ¥{{total}}</button>
+			<button class="g-btn-primary cta" :disabled="total < MIN_ORDER_TOTAL" @click="goConfirm">{{total < MIN_ORDER_TOTAL ? '再点 ¥' + (MIN_ORDER_TOTAL - total) + ' 可起送' : '确认下单 ¥' + total}}</button>
 		</view>
 		<view v-else-if="screen === 'confirm'" class="foot">
 			<view class="total-row"><text class="total-label">实付</text><text class="g-price total-num">¥{{total}}</text></view>
@@ -141,6 +141,8 @@
 
 	const totalCount = computed((): number => cartCount())
 	const total = computed((): number => cartTotal())
+	// 起送金额（镜像 cf-api/lib/config.js 的 MIN_ORDER_TOTAL，改两处要同步）
+	const MIN_ORDER_TOTAL = 16
 	const mealLabel = computed((): string => cfgOf(cartMeal.value).label)
 	const deliveryLabel = computed((): string => cfgOf(cartMeal.value).deliveryLabel)
 	const suggestLabel = computed((): string => cfgOf(cartMeal.value).suggest)
@@ -161,6 +163,7 @@
 	function goConfirm() {
 		// 结算要求已登录（对标主流小程序：浏览自由，下单需身份）
 		if (!requireLogin()) return
+		if (total.value < MIN_ORDER_TOTAL) { toast('未达 ¥' + MIN_ORDER_TOTAL + ' 起送，再点 ' + (MIN_ORDER_TOTAL - total.value) + ' 元即可'); return }
 		if (totalCount.value === 0) return
 		const c = cfgOf(cartMeal.value)
 		if (bjMinutes() >= c.closeMin) { toast('今日' + c.label + '配送已结束'); return }
