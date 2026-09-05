@@ -124,6 +124,10 @@ exports.main = async function (event, context) {
 			payload = await userHandle(p);
 		} else if (mod === 'pay') {
 			payload = await payHandle(p); // 微信支付：create/sync 用户端（token），notify 为微信回调
+		} else if (!mod && p.resource && typeof p.resource.ciphertext === 'string') {
+			// 微信支付回调没有 query/body 里的 mod，且 notify_url 不允许带查询参数（微信 URL 正则校验），
+			// 靠回调报文自带的结构（resource.ciphertext）识别路由进 pay
+			payload = await payHandle(p);
 		} else {
 			payload = fail('缺少 mod 参数（menu / order / admin）');
 		}

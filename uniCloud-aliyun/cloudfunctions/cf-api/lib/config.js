@@ -34,9 +34,10 @@ const WX_APPID = 'wx741ea5af08011b17';
 const WX_APP_SECRET = SECRETS.WX_APP_SECRET;
 
 // ---------- 微信支付 V3（商户号关联新 AppID 后启用） ----------
-// 回调地址必须 https；微信服务器 POST 到这里（query 带 mod=pay 进路由）。
+// 回调地址必须 https 且不允许携带查询参数（?后面的部分过不了微信的 URL 正则校验）；
+// 微信服务器 POST 的 JSON 报文自带 resource 结构，index.js 靠报文结构识别回调进 pay 模块。
 // 证书未配好时回调不可达不影响支付——前端支付后走 paySync 主动查询兜底。
-const PAY_NOTIFY_URL = 'https://xk-api.xingtudesign.com/cf-api?mod=pay';
+const PAY_NOTIFY_URL = 'https://xk-api.xingtudesign.com/cf-api';
 
 // pay.js 从 config 取支付商户三元组；|| '' 兜底防止 secrets 缺项时 indexOf 崩溃
 const MCH_ID = SECRETS.MCH_ID || '';

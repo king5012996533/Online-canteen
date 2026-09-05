@@ -111,7 +111,13 @@ async function payCreate(p) {
 	};
 	const res = await wxV3('POST', '/v3/pay/transactions/jsapi', bodyObj);
 	if (res.status !== 200 || !res.data || !res.data.prepay_id) {
-		const msg = (res.data && res.data.message) ? res.data.message : ('HTTP ' + res.status);
+		// 微信 V3 参数错误的响应带 detail.field/value，拼进报错便于一眼定位是哪个字段不合规
+		const d = (res.data && typeof res.data === 'object') ? res.data : {};
+		let det = '';
+		if (d.detail && typeof d.detail === 'object') {
+			det = '[' + (d.detail.field || d.detail.location || 'detail') + (d.detail.value !== undefined && d.detail.value !== null ? '=' + String(d.detail.value) : '') + '] ';
+		}
+		const msg = det + (d.message || ('HTTP ' + res.status)) + (d.code ? '(' + d.code + ')' : '');
 		return fail('支付下单失败：' + msg);
 	}
 	const pkg = 'prepay_id=' + res.data.prepay_id;
