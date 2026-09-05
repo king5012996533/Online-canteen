@@ -27,9 +27,9 @@
 ## 三、域名与后端（uniCloud）
 
 - ✅ 域名 `xingtudesign.com` 已有 ICP 备案号（合法域名前提满足）
-- ⏳ uniCloud 控制台给 `xk-api.xingtudesign.com` 配 HTTPS 证书 → 测 `https://` 能通
+- ✅ uniCloud 控制台已给 `xk-api.xingtudesign.com` 绑定 HTTPS 证书（2026-09-05，https 实测通过）
+- ✅ 代码改 https：`common/config.uts` 的 `API_BASE`（**单处**，前后端共用）
 - ⏳ 上线时：新号后台「开发管理 → 开发设置 → 服务器域名」request 合法域名加 `https://xk-api.xingtudesign.com`
-- ⏳ 代码改 https：`common/config.uts` 的 `API_BASE`（**单处**，前后端共用）
 
 ## 四、代码清理（提审前一次性做）
 
