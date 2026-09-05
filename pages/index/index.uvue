@@ -25,7 +25,7 @@
 				<view class="cat-head"><text class="cat-title">{{category}}</text><text class="cat-more">查看更多</text></view>
 				<view v-for="dish in dishesByCategory(category)" :key="dish.id" class="dish-row" :class="{sold: dish.sold}">
 					<image class="dish-thumb" :src="dish.image" mode="aspectFill"></image>
-					<view class="dish-info">
+					<view class="dish-info" @click="openDish(dish)">
 						<text class="dish-name">{{dish.name}}</text>
 						<view class="dish-price-line"><text class="dish-price">¥{{dish.price}}</text><text v-if="dish.custom" class="dish-qi"> 起</text></view>
 					</view>
@@ -54,15 +54,15 @@
 					<text class="pt">每道菜都有最低售价</text>
 					<text class="pd">你可以根据自己的食量自由调整价格，吃多少付多少。</text>
 					<view class="tiers">
-						<view class="tier" :class="{'sel': sliderVal === tier1}"><text class="tv">¥{{tier1}}</text><text class="tl">基础份量</text></view>
-						<view class="tier" :class="{'sel': sliderVal === tier2}"><text class="tv">¥{{tier2}}</text><text class="tl">加量</text></view>
-						<view class="tier" :class="{'sel': sliderVal === tier3}"><text class="tv">¥{{tier3}}</text><text class="tl">更足</text></view>
+						<view class="tier" :class="{'sel': sliderVal === tier1}" @click="pickTier(tier1)"><text class="tv">¥{{tier1}}</text><text class="tl">基础份量</text></view>
+						<view class="tier" :class="{'sel': sliderVal === tier2}" @click="pickTier(tier2)"><text class="tv">¥{{tier2}}</text><text class="tl">加量</text></view>
+						<view class="tier" :class="{'sel': sliderVal === tier3}" @click="pickTier(tier3)"><text class="tv">¥{{tier3}}</text><text class="tl">更足</text></view>
 					</view>
 				</view>
 				<view class="slider-block">
 					<text class="slider-title">选择您愿意支付的金额</text>
 					<slider class="the-slider" :min="sliderMin" :max="sliderMax" :step="1" :value="sliderVal" activeColor="#2F6B3F" backgroundColor="#E7E3D6" block-size="22" block-color="#2F6B3F" @change="onSlider"></slider>
-					<view class="slider-ticks"><text class="tick" :class="{'on': sliderVal === tier1}">¥{{tier1}}</text><text class="tick" :class="{'on': sliderVal === tier2}">¥{{tier2}}</text><text class="tick" :class="{'on': sliderVal === tier3}">¥{{tier3}}</text><text class="tick">¥{{sliderMax}}+</text></view>
+					<view class="slider-ticks"><text class="tick" :class="{'on': sliderVal === tier1}" @click="pickTier(tier1)">¥{{tier1}}</text><text class="tick" :class="{'on': sliderVal === tier2}" @click="pickTier(tier2)">¥{{tier2}}</text><text class="tick" :class="{'on': sliderVal === tier3}" @click="pickTier(tier3)">¥{{tier3}}</text><text class="tick" @click="pickTier(sliderMax)">¥{{sliderMax}}+</text></view>
 				</view>
 				<view class="choice">
 					<view class="cl"><text class="cl-l">你选择：</text><text class="cl-v">¥{{sliderVal}}</text></view>
@@ -135,6 +135,14 @@
 	const tier1 = computed((): number => { return selDish.value !== null ? selDish.value.price : 0 })
 	const tier2 = computed((): number => { return selDish.value !== null ? Math.round(selDish.value.price * 1.34) : 0 })
 	const tier3 = computed((): number => { return selDish.value !== null ? Math.round(selDish.value.price * 1.67) : 0 })
+
+	// 点选价格档/滑块刻度：直接把金额设为对应档位（与滑块双向联动）
+	function pickTier(v: number) {
+		if (selDish.value === null) return
+		if (v < sliderMin.value) { v = sliderMin.value }
+		if (v > sliderMax.value) { v = sliderMax.value }
+		sliderVal.value = v
+	}
 
 	function dishesByCategory(category: string): Dish[] { return dishes.value.filter((dish) => dish.category === category) }
 	function toast(msg: string) { toastMessage.value = msg; setTimeout(() => { toastMessage.value = '' }, 1800) }
