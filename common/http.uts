@@ -16,6 +16,7 @@ export function requestJsonTimeout(path: string, data: UTSJSONObject, timeoutMs:
 	else if (path.indexOf('/cf-order') === 0) { mod = 'order' }
 	else if (path.indexOf('/cf-user') === 0) { mod = 'user' }
 	else if (path.indexOf('/cf-menu') === 0) { mod = 'menu' }
+	else if (path.indexOf('/cf-pay') === 0) { mod = 'pay' }
 	data['mod'] = mod
 	const t = uni.getStorageSync('xk_user_token')
 	if (t !== '' && t !== null) { data['token'] = t }

@@ -19,7 +19,7 @@ const { WX_APPID, MCH_ID, MCH_SERIAL_NO, APIV3_KEY, PAY_NOTIFY_URL, MIN_ORDER_TO
 const { ok, fail, round2 } = require('./util.js');
 
 function payConfigured() {
-	return MCH_ID !== '' && MCH_ID.indexOf('__') < 0 && MCH_SERIAL_NO !== '' && MCH_SERIAL_NO.indexOf('__') < 0 && APIV3_KEY !== '' && APIV3_KEY.indexOf('__') < 0;
+	return typeof MCH_ID === 'string' && MCH_ID !== '' && MCH_ID.indexOf('__') < 0 && typeof MCH_SERIAL_NO === 'string' && MCH_SERIAL_NO !== '' && MCH_SERIAL_NO.indexOf('__') < 0 && typeof APIV3_KEY === 'string' && APIV3_KEY !== '' && APIV3_KEY.indexOf('__') < 0;
 }
 
 function privateKeyPem() {

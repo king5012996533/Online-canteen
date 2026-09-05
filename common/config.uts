@@ -1,3 +1,6 @@
 // 全局配置（客户端唯一出处）
 // 上线前：http 改 https，并在微信后台「开发设置 → 服务器域名」加 request 合法域名
 export const API_BASE = 'https://xk-api.xingtudesign.com'
+
+// 模拟支付入口（支付联调期临时改 true；正式发版前必须改回 false 并重新编译上传）
+export const MOCK_PAY = false

@@ -57,7 +57,7 @@
 				</view>
 			</view>
 
-			<!-- 屏3 支付：微信支付（真实扣款）+ 模拟支付（测试期备用） -->
+			<!-- 屏3 支付：微信支付（真实扣款）；模拟支付仅 MOCK_PAY=true 时显示 -->
 			<view v-else-if="screen === 'pay'" class="content">
 				<view class="card pay-card">
 					<view class="pay-merchant"><view class="pay-avatar"><text class="pay-avatar-char">富</text></view><text class="pay-name">富记线上饭堂</text></view>
@@ -65,9 +65,9 @@
 					<text class="pay-order">NO.{{orderNo}}</text>
 					<text class="pay-mode">微信支付 · {{mealLabel}}</text>
 				</view>
-				<view class="notice"><text class="notice-text">测试期说明：「微信支付」为真实扣款（建议小额测试）；「模拟支付」不产生扣款，仅走通流程。</text></view>
+				<view v-if="MOCK_PAY" class="notice"><text class="notice-text">测试期说明：「微信支付」为真实扣款（建议小额测试）；「模拟支付」不产生扣款，仅走通流程。</text></view>
 				<button class="g-btn-primary cta" :disabled="paying" @click="payReal">{{paying ? '支付中…' : '微信支付'}}</button>
-				<button class="g-btn-ghost cta cta-gap" @click="mockPay">模拟支付（测试）</button>
+				<button v-if="MOCK_PAY" class="g-btn-ghost cta cta-gap" @click="mockPay">模拟支付（测试）</button>
 				<button class="g-btn-ghost cta cta-gap" @click="screen = 'confirm'">返回修改订单</button>
 			</view>
 
@@ -120,6 +120,7 @@
 
 <script setup lang="uts">
 	import { requestJson } from '../../common/http.uts'
+	import { MOCK_PAY } from '../../common/config.uts'
 	import { cartHydrate, cartItems, cartMeal, cartCount, cartTotal, cartSetQty, cartClear, CartItem } from '../../common/cart.uts'
 	import { customer, sessionRestore, requireLogin } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
@@ -219,7 +220,7 @@
 				provider: 'wxpay',
 				orderInfo: { timeStamp: ts, nonceStr: n, package: pkg, signType: 'RSA', paySign: sig },
 				success: () => { payConfirmed() },
-				fail: () => { paying.value = false; toast('支付未完成，可重试或用模拟支付') }
+				fail: () => { paying.value = false; toast('支付未完成，请重试') }
 			})
 		} catch (e) { paying.value = false; toast('网络异常，请稍后再试') }
 	}
@@ -233,8 +234,9 @@
 			} else { toast('支付成功，结果确认中，可在订单页查看'); screen.value = 'success' }
 		} catch (e) { paying.value = false; toast('支付成功，结果确认中'); screen.value = 'success' }
 	}
-	// 模拟支付：测试期走通流程，不产生扣款、不改云端支付状态
+	// 模拟支付：测试期走通流程，不产生扣款、不改云端支付状态（按钮仅 MOCK_PAY=true 时渲染）
 	function mockPay() {
+		if (!MOCK_PAY) return
 		screen.value = 'success'
 	}
 	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }

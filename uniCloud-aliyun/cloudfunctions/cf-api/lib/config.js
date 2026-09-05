@@ -38,6 +38,11 @@ const WX_APP_SECRET = SECRETS.WX_APP_SECRET;
 // 证书未配好时回调不可达不影响支付——前端支付后走 paySync 主动查询兜底。
 const PAY_NOTIFY_URL = 'https://xk-api.xingtudesign.com/cf-api?mod=pay';
 
+// pay.js 从 config 取支付商户三元组；|| '' 兜底防止 secrets 缺项时 indexOf 崩溃
+const MCH_ID = SECRETS.MCH_ID || '';
+const MCH_SERIAL_NO = SECRETS.MCH_SERIAL_NO || '';
+const APIV3_KEY = SECRETS.APIV3_KEY || '';
+
 module.exports = {
 	ADMIN_PASSWORD: ADMIN_PASSWORD,
 	MIN_ORDER_TOTAL: MIN_ORDER_TOTAL,
@@ -49,5 +54,8 @@ module.exports = {
 	IMG_MODEL: IMG_MODEL,
 	WX_APPID: WX_APPID,
 	WX_APP_SECRET: WX_APP_SECRET,
-	PAY_NOTIFY_URL: PAY_NOTIFY_URL
+	PAY_NOTIFY_URL: PAY_NOTIFY_URL,
+	MCH_ID: MCH_ID,
+	MCH_SERIAL_NO: MCH_SERIAL_NO,
+	APIV3_KEY: APIV3_KEY
 };
