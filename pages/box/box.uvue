@@ -216,11 +216,21 @@
 			const n = d?.getString('nonceStr') ?? ''
 			const pkg = d?.getString('package') ?? ''
 			const sig = d?.getString('paySign') ?? ''
+			// mp-weixin 端支付参数必须放顶层（orderInfo 是 App 端写法，微信端运行时直通 wx.requestPayment 不解包）
 			uni.requestPayment({
 				provider: 'wxpay',
-				orderInfo: { timeStamp: ts, nonceStr: n, package: pkg, signType: 'RSA', paySign: sig },
+				orderInfo: '',
+				timeStamp: ts,
+				nonceStr: n,
+				package: pkg,
+				signType: 'RSA',
+				paySign: sig,
 				success: () => { payConfirmed() },
-				fail: () => { paying.value = false; toast('支付未完成，请重试') }
+				fail: (err) => {
+				paying.value = false
+				// 联调期把具体失败原因弹出来（errMsg 能区分：用户取消 / 签名失败 / 工具不支持等）
+				uni.showModal({ title: '支付未完成', content: err.errMsg, showCancel: false })
+			}
 			})
 		} catch (e) { paying.value = false; toast('网络异常，请稍后再试') }
 	}
