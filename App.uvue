@@ -5,6 +5,21 @@
 
 	onLaunch(() => {
 		console.log('App Launch')
+		// #ifdef MP-WEIXIN
+		// 微信异步更新：旧包用户首次打开仍跑旧版，下载完新包后弹窗提示重启
+		const um = uni.getUpdateManager()
+		um.onUpdateReady(() => {
+			uni.showModal({
+				title: '发现新版本',
+				content: '新版本已准备好，是否重启应用？',
+				success: (res) => {
+					if (res.confirm) {
+						um.applyUpdate()
+					}
+				}
+			})
+		})
+		// #endif
 	})
 
 	onAppShow(() => {
