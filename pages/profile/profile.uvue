@@ -25,8 +25,8 @@
 			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveNickname">{{saving ? '保存中…' : '保存'}}</button>
 		</view>
 
-		<!-- 头像昵称卡（已设昵称后可随时改） -->
-		<view v-if="loggedIn && customer.nickname !== ''" class="card edit-card">
+		<!-- 头像昵称卡（点菜单行展开修改） -->
+		<view v-if="editingProfile" class="card edit-card">
 			<text class="g-cap edit-cap">头像与昵称</text>
 			<view class="g-hairline edit-line"></view>
 			<view class="avatar-edit-row">
@@ -45,6 +45,12 @@
 			<view class="menu-row" @click="goOrders">
 				<image class="row-ic" src="/static/tab/orders.png" mode="aspectFit"></image>
 				<text class="row-text">我的订单</text>
+				<text class="row-arr">›</text>
+			</view>
+			<view class="menu-row" @click="toggleProfileEdit">
+				<image class="row-ic" src="/static/tab/me.png" mode="aspectFit"></image>
+				<text class="row-text">头像与昵称</text>
+				<text class="row-val">{{customer.nickname || '未设置'}}</text>
 				<text class="row-arr">›</text>
 			</view>
 			<view class="menu-row" @click="toggleEdit">
@@ -67,7 +73,7 @@
 			<view class="g-hairline edit-line"></view>
 			<view class="form-field"><view class="form-label-row"><text class="g-label">配送联系人</text><text class="g-req">*</text></view><input class="g-field-input" v-model="form.name" placeholder="如：张三 / 3 楼财务" placeholder-class="g-ph" maxlength="20" /></view>
 			<view class="form-field"><view class="form-label-row"><text class="g-label">联系电话（选填）</text></view><input class="g-field-input" v-model="form.phone" type="number" placeholder="138 0000 0000" placeholder-class="g-ph" maxlength="11" /></view>
-			<view class="form-field"><view class="form-label-row"><text class="g-label">常用配送地点（选填）</text></view><input class="g-field-input" v-model="form.location" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" maxlength="40" /></view>
+			<view class="form-field"><view class="form-label-row"><text class="g-label">常用配送地点（选填）</text><text class="loc-pick" @click="pickMapLocation">地图选点</text></view><input class="g-field-input" v-model="form.location" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" maxlength="40" /></view>
 			<button class="g-btn-primary save-btn" :disabled="saving" @click="saveContact">{{saving ? '保存中…' : '保存'}}</button>
 		</view>
 
@@ -104,12 +110,13 @@
 </template>
 
 <script setup lang="uts">
-	import { customer, loggedIn, loginChecking, loginErr, sessionRestore, login, logout, saveProfileFields } from '../../common/session.uts'
+	import { customer, loggedIn, loginChecking, loginErr, sessionRestore, login, logout, saveProfileFields, pickLocationText } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
 
 	const toastMessage = ref('')
 	const nicknameInput = ref('')
 	const editing = ref(false)
+	const editingProfile = ref(false)
 	const aboutSheet = ref(false)
 	const saving = ref(false)
 	const form = reactive({ name: '', phone: '', location: '' })
@@ -201,6 +208,17 @@
 			form.location = customer.location
 		}
 	}
+	// 头像与昵称编辑卡展开/收起（展开时回填当前昵称，避免页面常驻显示第二份昵称）
+	function toggleProfileEdit() {
+		editingProfile.value = !editingProfile.value
+		if (editingProfile.value) { nicknameInput.value = customer.nickname }
+	}
+	// 地图选点：选中回填表单（点保存才落库）
+	async function pickMapLocation() {
+		const v = await pickLocationText()
+		if (v === '') { toast('未选择位置'); return }
+		form.location = v
+	}
 	function goOrders() { uni.switchTab({ url: '/pages/orders/orders' }) }
 	function aboutTip() { aboutSheet.value = true }
 	// 退出登录：清掉本地 token 与登录态；下次进入点「一键登录」即可恢复
@@ -236,6 +254,7 @@
 	.edit-line { margin-bottom: 6px; }
 	.form-field { margin-top: 12px; }
 	.form-label-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
+	.loc-pick { margin-left: auto; font-size: 11.5px; font-weight: 700; color: #2F6B3F; }
 	.save-btn { width: 100%; border: 0; margin-top: 16px; }
 	.avatar-edit-row { display: flex; flex-direction: row; align-items: center; margin-top: 4px; }
 	.avatar-pick { margin-left: 12px; background-color: #F3F7F1; border: 0; border-radius: 999px; padding: 7px 14px; font-size: 12px; font-weight: 700; color: #22301F; }

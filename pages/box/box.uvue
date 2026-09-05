@@ -104,7 +104,7 @@
 			<view class="total-row"><text class="total-label">合计</text><text class="g-price total-num">¥{{total}}</text></view>
 			<view class="deliver-card">
 				<view class="deliver-line"><text class="deliver-label">配送时间</text><text class="deliver-value">{{deliveryLabel}}</text></view>
-				<view class="deliver-line"><text class="deliver-label">配送地点</text><text class="deliver-value">{{customer.location || '公司前台'}}</text></view>
+				<view class="deliver-line deliver-tap" @click="pickLoc"><text class="deliver-label">配送地点</text><text class="deliver-value">{{customer.location || '未设置，点此地图选点'}}</text><text class="deliver-arr">›</text></view>
 			</view>
 			<button class="g-btn-primary cta" :disabled="total < MIN_ORDER_TOTAL" @click="goConfirm">{{total < MIN_ORDER_TOTAL ? '再点 ¥' + (MIN_ORDER_TOTAL - total) + ' 可起送' : '确认下单 ¥' + total}}</button>
 		</view>
@@ -122,7 +122,7 @@
 	import { requestJson } from '../../common/http.uts'
 	import { MOCK_PAY } from '../../common/config.uts'
 	import { cartHydrate, cartItems, cartMeal, cartCount, cartTotal, cartSetQty, cartClear, CartItem } from '../../common/cart.uts'
-	import { customer, sessionRestore, requireLogin } from '../../common/session.uts'
+	import { customer, sessionRestore, requireLogin, sessionSaveProfile, pickLocationText } from '../../common/session.uts'
 	import { cfgOf } from '../../common/meals.uts'
 
 	// 下单请求行：服务端只收 id/qty/pay
@@ -160,6 +160,14 @@
 	}
 	function setQty(id: string, qty: number) { cartSetQty(id, qty) }
 	function clearCart() { cartClear(); toast('饭盒已清空') }
+	// 地图选点：调起微信内置地图选配送地点，选中即改顾客档案并同步云端
+	async function pickLoc() {
+		const v = await pickLocationText()
+		if (v === '') { toast('未选择位置'); return }
+		customer.location = v
+		sessionSaveProfile()
+		toast('配送地点已更新')
+	}
 	// 列表 → 确认：本页不做可点单拦截（首页已拦），仅在收档后提示拦截；收餐信息缺项提供快捷输入
 	function goConfirm() {
 		// 结算要求已登录（对标主流小程序：浏览自由，下单需身份）
@@ -341,6 +349,8 @@
 	.total-num { font-size: 22px; }
 	.deliver-card { background-color: #F6F3EB; border-radius: 12px; padding: 10px 12px; margin-top: 12px; }
 	.deliver-line { display: flex; flex-direction: row; justify-content: space-between; padding: 3px 0; }
+	.deliver-tap { align-items: center; }
+	.deliver-arr { margin-left: 8px; color: #C4CCBF; font-size: 15px; flex-shrink: 0; }
 	.deliver-label { font-size: 12px; color: #8C9689; }
 	.deliver-value { font-size: 12px; font-weight: 600; color: #22301F; }
 </style>

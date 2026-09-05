@@ -79,6 +79,7 @@
 			<text class="sheet-title">配送地点</text>
 			<text class="g-sub">餐做好后送到这个位置，下单时自动使用</text>
 			<input class="g-field-input price-input" v-model="locInput" placeholder="如：XX大厦 / 公司前台" placeholder-class="g-ph" />
+			<button class="g-btn-ghost cta" @click="pickMapLoc">在地图上选点</button>
 			<button class="g-btn-primary cta" @click="saveLocSheet">保存</button>
 			<button class="g-btn-ghost cta" @click="locSheet = false">取消</button>
 		</view></view>
@@ -89,7 +90,7 @@
 	import { requestJson } from '../../common/http.uts'
 	import { cfgOf } from '../../common/meals.uts'
 	import { cartHydrate, cartItems, cartMeal, cartAdd, cartCount, cartSetMeal, cartSyncBadge } from '../../common/cart.uts'
-	import { customer, sessionRestore, sessionSaveProfile } from '../../common/session.uts'
+	import { customer, sessionRestore, sessionSaveProfile, pickLocationText } from '../../common/session.uts'
 
 	type Dish = { id: string; category: string; name: string; desc: string; price: number; pay: number; qty: number; custom: boolean; sold: boolean; image: string }
 
@@ -207,6 +208,12 @@
 	function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
 	// 定位胶囊：弹出配送地点选择/输入（与个人中心无关）
 	function openLocSheet() { locInput.value = customer.location; locSheet.value = true }
+	// 地图选点：调起微信内置地图，选中回填输入框（仍需点保存生效）
+	async function pickMapLoc() {
+		const v = await pickLocationText()
+		if (v === '') { toast('未选择位置'); return }
+		locInput.value = v
+	}
 	function saveLocSheet() {
 		const v = locInput.value.trim()
 		if (v === '') { toast('请输入配送地点'); return }

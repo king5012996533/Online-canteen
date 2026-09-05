@@ -135,3 +135,19 @@ export async function sessionSaveProfile(): Promise<void> {
 		} as UTSJSONObject)
 	} catch (e) { console.log('sessionSaveProfile fail', e) }
 }
+
+// 地图选点：调起微信内置地图选取配送地点，返回拼好的地点文案（门店名+详细地址）；取消/失败返回空串
+export function pickLocationText(): Promise<string> {
+	return new Promise<string>((resolve) => {
+		uni.chooseLocation({
+			success: (res) => {
+				let v = ''
+				if (res.name !== '' && res.address !== '' && res.address.indexOf(res.name) < 0) { v = res.name + ' ' + res.address }
+				else if (res.name !== '') { v = res.name }
+				else { v = res.address }
+				resolve(v)
+			},
+			fail: () => { resolve('') }
+		})
+	})
+}

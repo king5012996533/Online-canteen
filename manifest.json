@@ -14,9 +14,10 @@
 			"urlCheck": false
 		},
 		"usingComponents": true,
+		"requiredPrivateInfos": ["chooseLocation"],
 		"permission": {
 			"scope.userLocation": {
-				"desc": "用于搜索附近的蓝牙打印机"
+				"desc": "用于在地图上选择你的配送地点"
 			}
 		}
 	},
