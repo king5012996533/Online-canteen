@@ -111,6 +111,7 @@
 
 <script setup lang="uts">
 	import { customer, loggedIn, loginChecking, loginErr, sessionRestore, login, logout, saveProfileFields, pickLocationText } from '../../common/session.uts'
+	import { requestJsonTimeout } from '../../common/http.uts'
 	import { cfgOf } from '../../common/meals.uts'
 
 	const toastMessage = ref('')
@@ -165,29 +166,35 @@
 		saving.value = false
 		toast(ok ? '已保存' : '保存失败，请重试')
 	}
-	// 更换头像：相册选图 → 上传云存储 → 保存档案
+	// 更换头像：相册选图 → 读 base64 → 云端 uploadAvatar 落云存储并回写档案
+	// （客户端未绑定 uniCloud 服务空间，不能直传，统一走 cf-api）
 	async function pickAvatar() {
 		uni.chooseImage({
 			count: 1,
-			success: (res) => {
+			sizeType: ['compressed'],
+			success: async (res) => {
 				const path = res.tempFilePaths.length > 0 ? res.tempFilePaths[0] : ''
 				if (path === '') return
-				uniCloud.uploadFile({
-					filePath: path,
-					cloudPath: 'avatars/' + Date.now().toString(36) + '.jpg',
-					success: async (up) => {
-						try {
-							const tf = await uniCloud.getTempFileURL({ fileList: [up.fileID] })
-							let url = ''
-							if (tf.fileList.length > 0) { url = tf.fileList[0].tempFileURL }
-							if (url === '') { toast('头像上传失败，请重试'); return }
-							customer.avatar_url = url
-							const ok = await saveProfileFields(customer.nickname, url, customer.name, customer.phone, customer.location)
-							toast(ok ? '头像已更新' : '头像已上传，档案保存失败')
-						} catch (e) { console.log('avatar tempUrl fail', e); toast('头像地址获取失败') }
-					},
-					fail: () => { toast('头像上传失败，请重试') }
+				toast('头像上传中…')
+				const b64 = await new Promise<string>((resolve) => {
+					uni.getFileSystemManager().readFile({
+						filePath: path,
+						encoding: 'base64',
+						success: (r) => { resolve(typeof r.data === 'string' ? r.data : '') },
+						fail: () => { resolve('') }
+					})
 				})
+				if (b64 === '') { toast('读取图片失败，请重试'); return }
+				try {
+					const r = await requestJsonTimeout('/cf-user', { action: 'uploadAvatar', base64: b64 } as UTSJSONObject, 30000)
+					if (r !== null && r.getBoolean('ok') === true) {
+						const d = r.getJSON('data')
+						const url = (d instanceof UTSJSONObject) ? (d.getString('url') ?? '') : ''
+						if (url === '') { toast('头像上传失败，请重试'); return }
+						customer.avatar_url = url
+						toast('头像已更新')
+					} else { toast(r !== null ? (r.getString('err') ?? '头像上传失败') : '网络异常，请稍后再试') }
+				} catch (e) { toast('头像上传失败，请重试') }
 			}
 		})
 	}

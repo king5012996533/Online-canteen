@@ -1,7 +1,7 @@
 'use strict';
 /**
  * mod = 'user'：微信小程序登录用户模块（新增）
- * action: login / getProfile / saveProfile / myOrders
+ * action: login / getProfile / saveProfile / myOrders / uploadAvatar
  *
  * 统一约定：
  *   - token 由前端 http 层自动注入 body.token（storage key: xk_user_token）；
@@ -177,6 +177,59 @@ async function userMyOrders(p) {
 	return ok({ orders: orders });
 }
 
+// action='uploadAvatar'：入参 {token, base64}（图片二进制的 base64，不含 data: 前缀）。
+// 存云存储 → 取 https 地址 → 写回 profile.avatar_url（存储模式与 admin 生图一致，客户端不直传）
+async function userUploadAvatar(p) {
+	const token = typeof p.token === 'string' ? p.token.trim() : '';
+	if (!token) {
+		return fail(ERR_TOKEN);
+	}
+	const db = uniCloud.database();
+	const user = await findUserByToken(db.collection('users'), token);
+	if (!user) {
+		return fail(ERR_TOKEN);
+	}
+	const b64 = typeof p.base64 === 'string' ? p.base64 : '';
+	// base64 长度上限约 1.4M 字符 ≈ 1MB 二进制，前端选压缩图
+	if (b64 === '' || b64.length > 1400000) {
+		return fail('图片无效或过大，请换张小图');
+	}
+	let fileID = '';
+	try {
+		const up = await uniCloud.uploadFile({
+			cloudPath: 'avatars/' + user._id + '-' + Date.now().toString(36) + '.jpg',
+			fileContent: Buffer.from(b64, 'base64')
+		});
+		fileID = up.fileID || '';
+	} catch (e) {
+		return fail('头像上传失败，请重试');
+	}
+	if (fileID === '') {
+		return fail('头像上传失败，请重试');
+	}
+	let url = '';
+	try {
+		const tfu = await uniCloud.getTempFileURL({ fileList: [fileID] });
+		url = (tfu.fileList && tfu.fileList[0] && tfu.fileList[0].tempFileURL) || '';
+	} catch (e) {
+		url = '';
+	}
+	if (url === '') {
+		return fail('头像地址获取失败，请重试');
+	}
+	const oldProfile = user.profile || {};
+	await db.collection('users').doc(user._id).update({
+		profile: {
+			nickname: typeof oldProfile.nickname === 'string' ? oldProfile.nickname : '',
+			avatar_url: url,
+			name: typeof oldProfile.name === 'string' ? oldProfile.name : '',
+			phone: typeof oldProfile.phone === 'string' ? oldProfile.phone : '',
+			location: typeof oldProfile.location === 'string' ? oldProfile.location : ''
+		}
+	});
+	return ok({ url: url });
+}
+
 // user 模块分发
 async function userHandle(p) {
 	if (p.action === 'login') {
@@ -190,6 +243,9 @@ async function userHandle(p) {
 	}
 	if (p.action === 'myOrders') {
 		return await userMyOrders(p);
+	}
+	if (p.action === 'uploadAvatar') {
+		return await userUploadAvatar(p);
 	}
 	return fail('不支持的操作');
 }
