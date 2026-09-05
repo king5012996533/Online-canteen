@@ -1,7 +1,7 @@
 'use strict';
 /**
  * mod = 'admin'：厨房端管理（原 cf-admin，需口令）
- * 口令校验后 action: summary / updateStatus / getMenu / saveMenu / genDishImage
+ * 口令校验后 action: summary / updateStatus / getMenu / saveMenu / genDishImage / uploadDishImage
  */
 
 const { ADMIN_PASSWORD, IMG_API_BASE, IMG_API_KEY, IMG_MODEL } = require('./config.js');
@@ -249,6 +249,33 @@ async function genDishImage(name, category, desc) {
 // 口令试错限流（按 IP，实例内存级：多数攻击场景已够用；实例重启清零）
 const adminFails = new Map(); // ip -> { count, until }
 
+// action='uploadDishImage'：手动上传菜品配图，入参 {base64}（图片二进制的 base64，不含 data: 前缀）。
+// 存云存储返回 https 地址，菜品图片地址仍由 saveMenu 落库（与 genDishImage 同存储模式）
+async function uploadDishImage(b64) {
+	if (typeof b64 !== 'string' || b64 === '' || b64.length > 6000000) {
+		return { ok: false, err: '图片无效或过大（上限约 4MB），请压缩后上传' };
+	}
+	try {
+		const up = await uniCloud.uploadFile({
+			cloudPath: 'dish-images/up-' + Date.now().toString(36) + '.jpg',
+			fileContent: Buffer.from(b64, 'base64')
+		});
+		let url = '';
+		if (up.fileID) {
+			const tfu = await uniCloud.getTempFileURL({ fileList: [up.fileID] });
+			if (tfu.fileList && tfu.fileList.length > 0 && tfu.fileList[0].tempFileURL) {
+				url = tfu.fileList[0].tempFileURL;
+			}
+		}
+		if (url === '') {
+			return { ok: false, err: '上传成功，但获取地址失败，请重试' };
+		}
+		return { ok: true, data: { url: url } };
+	} catch (e) {
+		return { ok: false, err: '上传失败，请重试' };
+	}
+}
+
 // 口令校验通过后的业务分发
 async function adminHandle(params, clientIP) {
 	const now = Date.now();
@@ -334,6 +361,10 @@ async function adminHandle(params, clientIP) {
 
 	if (params.action === 'genDishImage') {
 		return await genDishImage(params.name, params.category, params.desc);
+	}
+
+	if (params.action === 'uploadDishImage') {
+		return await uploadDishImage(params.base64);
 	}
 
 	return { ok: false, err: '不支持的操作' };

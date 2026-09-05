@@ -237,7 +237,7 @@
 								<text class="edit-label">配图</text>
 								<image v-if="editImg !== ''" class="edit-img" :src="editImg" mode="aspectFill"></image>
 								<view v-else class="edit-img edit-img-empty"><text class="edit-img-empty-t">暂无图</text></view>
-								<button class="act act-gen" :disabled="genImgLoading" @click="genImage">{{genImgLoading ? '生成中，约 1~3 分钟…' : 'AI 生成配图'}}</button>
+								<button class="act act-gen" :disabled="genImgLoading" @click="pickDishImage">{{genImgLoading ? '上传中…' : '上传菜品图'}}</button>
 							</view>
 							<view class="edit-chips">
 								<view class="chip-t" :class="{'chip-t-on': editCustom}" @click="toggleEditCustom"><text class="chip-t-text" :class="{'chip-t-text-on': editCustom}">可加价</text></view>
@@ -855,24 +855,43 @@ initPrinter(toast)
 	function toggleSoldOut(d: MenuDish) { d.soldOut = !d.soldOut }
 	function toggleEditCustom() { editCustom.value = !editCustom.value }
 
-	// AI 生成菜品配图：调 cf-api 的 genDishImage（生图 30~60 秒，走长超时）
-	async function genImage() {
+	// 手动上传菜品配图：选图 → base64 → cf-admin uploadDishImage 落云存储 → 回填地址（保存菜品时随 saveMenu 落库）
+	async function pickDishImage() {
 		if (genImgLoading.value) return
 		if (editIdx.value < 0) return
-		if (editName.value.trim() === '') { toast('先填菜名，再生成配图'); return }
-		genImgLoading.value = true
-		const result = await requestJsonTimeout('/cf-admin', { password: pass, action: 'genDishImage', name: editName.value.trim(), category: editCategory.value, desc: editDesc.value } as UTSJSONObject, 330000)
-		genImgLoading.value = false
-		if (editIdx.value < 0) return
-		if (result !== null && result.getBoolean('ok') === true) {
-			const data = result.getJSON('data')
-			if (data instanceof UTSJSONObject) {
-				editImg.value = data.getString('url') ?? ''
-				toast('配图已生成 ✓ 记得保存该菜')
-			} else { toast('生成失败，请重试') }
-		} else {
-			toast(result !== null ? (result.getString('err') ?? '生成失败，请重试') : '网络超时，请重试')
-		}
+		uni.chooseImage({
+			count: 1,
+			sizeType: ['compressed'],
+			success: async (res) => {
+				const path = res.tempFilePaths.length > 0 ? res.tempFilePaths[0] : ''
+				if (path === '') return
+				genImgLoading.value = true
+				let errMsg = ''
+				let url = ''
+				try {
+					const b64 = await new Promise<string>((resolve) => {
+						uni.getFileSystemManager().readFile({
+							filePath: path,
+							encoding: 'base64',
+							success: (r) => { resolve(typeof r.data === 'string' ? r.data : '') },
+							fail: () => { resolve('') }
+						})
+					})
+					if (b64 === '') {
+						errMsg = '读取图片失败，请重试'
+					} else {
+						const result = await requestJsonTimeout('/cf-admin', { password: pass, action: 'uploadDishImage', base64: b64 } as UTSJSONObject, 60000)
+						if (result !== null && result.getBoolean('ok') === true) {
+							const data = result.getJSON('data')
+							if (data instanceof UTSJSONObject) { url = data.getString('url') ?? '' }
+						} else { errMsg = result !== null ? (result.getString('err') ?? '上传失败，请重试') : '网络异常，请稍后再试' }
+					}
+				} catch (e) { errMsg = '上传失败，请重试' }
+				genImgLoading.value = false
+				if (url !== '') { editImg.value = url; toast('图片已上传 ✓ 记得保存该菜') }
+				else if (errMsg !== '') { toast(errMsg) }
+			}
+		})
 	}
 	function toggleSyncTpl() { menuSyncTpl.value = !menuSyncTpl.value }
 	function togglePrinterPanel() { showPrinter.value = !showPrinter.value }
